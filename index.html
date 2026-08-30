@@ -2,21 +2,22 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>妞妞的小花园</title>
 <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.4/dist/mqtt.min.js"></script>
 <style>
 :root{
-  --bg:#f5f7f3;
-  --card:#ffffff;
-  --text:#243125;
-  --muted:#7b857c;
-  --line:#e7ebe5;
-  --ok:#dff0df;
-  --okText:#24512a;
-  --danger:#f5dddd;
-  --dangerText:#7a2b2b;
-  --neutral:#e9ecef;
+  --bg:#f4f7f2;
+  --card:#fff;
+  --text:#233126;
+  --muted:#7d867f;
+  --line:#e4e9e3;
+  --green:#dff0df;
+  --greenText:#24512a;
+  --red:#f4dddd;
+  --redText:#7a2b2b;
+  --gray:#e9ecef;
+  --log:#f8faf7;
 }
 *{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;overflow:hidden}
@@ -30,218 +31,135 @@ body{
   height:100dvh;
   max-width:520px;
   margin:0 auto;
-  padding:
-    max(8px, env(safe-area-inset-top))
-    10px
-    max(8px, env(safe-area-inset-bottom));
-  display:grid;
-  grid-template-rows:auto auto 1fr;
-  gap:8px;
+  padding:max(8px,env(safe-area-inset-top)) 10px max(8px,env(safe-area-inset-bottom));
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+  overflow:hidden;
 }
-.hero,.mini,.controls{
+.card{
   background:var(--card);
   border:1px solid var(--line);
   border-radius:18px;
 }
-.hero{
-  padding:12px 14px 11px;
-}
-.head{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:8px;
-}
-.title{
-  font-size:clamp(19px,5vw,24px);
-  line-height:1.05;
-  font-weight:800;
-  white-space:nowrap;
-}
-.cloud{
-  font-size:12px;
-  color:var(--muted);
-  white-space:nowrap;
-}
-.dot{
-  display:inline-block;
-  width:9px;height:9px;border-radius:50%;
-  margin-right:5px;
-  background:#c65c5c;
-}
-.dot.ok{background:#55a760}
-.cute{
-  margin-top:4px;
-  color:var(--muted);
-  font-size:12px;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-}
-.hero-main{
-  margin-top:5px;
-  display:flex;
-  align-items:end;
-  justify-content:space-between;
-  gap:10px;
-}
-.moisture{
-  font-size:clamp(42px,13vw,58px);
-  line-height:.95;
-  font-weight:850;
-  letter-spacing:-2px;
-}
-.moisture-label{
-  margin-top:3px;
-  font-size:11px;
-  color:var(--muted);
-}
-.quick{
-  text-align:right;
-  font-size:11px;
-  color:var(--muted);
-  line-height:1.5;
-}
-.login{
-  margin-top:8px;
-  padding-top:8px;
-  border-top:1px solid var(--line);
-}
-.login-row{
-  display:grid;
-  grid-template-columns:1fr 105px;
-  gap:7px;
-}
+
+/* 顶部 */
+.hero{padding:11px 13px 10px;flex:0 0 auto}
+.head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.title{font-size:23px;font-weight:800;line-height:1.05;white-space:nowrap}
+.cloud{font-size:12px;color:var(--muted);white-space:nowrap}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;background:#c75e5e}
+.dot.ok{background:#58a663}
+.cute{margin-top:3px;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hero-main{margin-top:5px;display:flex;align-items:end;justify-content:space-between;gap:8px}
+.moisture{font-size:53px;font-weight:850;line-height:.9;letter-spacing:-2px}
+.moisture-label{margin-top:4px;font-size:11px;color:var(--muted)}
+.quick{text-align:right;font-size:11px;line-height:1.45;color:var(--muted)}
+.login{margin-top:7px;padding-top:7px;border-top:1px solid var(--line)}
+.login-row{display:grid;grid-template-columns:1fr 100px;gap:6px}
 input[type=password]{
-  width:100%;
-  height:40px;
-  border:1px solid #cbd3cb;
-  border-radius:11px;
-  padding:0 10px;
-  font-size:16px;
-  min-width:0;
+  min-width:0;width:100%;height:39px;border:1px solid #cbd3cb;border-radius:10px;
+  padding:0 10px;font-size:16px;background:#fff
 }
-.remember{
-  margin-top:6px;
-  display:flex;
-  align-items:center;
-  gap:6px;
-  font-size:11px;
-  color:var(--muted);
-}
+.remember{margin-top:5px;display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
 .remember input{width:16px;height:16px}
+
+/* 四格状态 */
 .status-grid{
-  display:grid;
-  grid-template-columns:repeat(4,1fr);
-  gap:6px;
+  display:grid;grid-template-columns:repeat(4,1fr);gap:6px;flex:0 0 auto
 }
-.mini{
-  min-width:0;
-  padding:9px 6px 8px;
-  text-align:center;
-}
-.mini .k{
-  color:var(--muted);
-  font-size:10px;
-  line-height:1.1;
-}
+.mini{padding:8px 4px;text-align:center;min-width:0}
+.mini .k{font-size:10px;color:var(--muted);line-height:1}
 .mini .v{
-  margin-top:4px;
-  font-size:clamp(13px,3.8vw,17px);
-  font-weight:750;
-  line-height:1.15;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
+  margin-top:4px;font-size:16px;font-weight:760;line-height:1.15;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis
 }
-.controls{
-  min-height:0;
-  padding:10px;
-  display:grid;
-  grid-template-rows:auto auto 1fr auto;
-  gap:7px;
-}
-.section-title{
-  font-size:11px;
-  color:var(--muted);
-}
-.button-grid{
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:7px;
-}
+
+/* 控制 */
+.controls{padding:9px;flex:0 0 auto}
+.section-title{font-size:11px;color:var(--muted);margin-bottom:6px}
+.button-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 button{
-  width:100%;
-  height:46px;
-  border:0;
-  border-radius:13px;
-  font-size:14px;
-  font-weight:750;
-  padding:0 8px;
-  cursor:pointer;
+  width:100%;height:44px;border:0;border-radius:12px;
+  font-size:14px;font-weight:750;padding:0 7px;cursor:pointer
 }
-button:disabled{opacity:.4;cursor:not-allowed}
-.water{background:var(--ok);color:var(--okText)}
-.stop{background:var(--danger);color:var(--dangerText)}
-.normal{background:var(--neutral);color:#333}
-.test{background:#f2ead6;color:#66501f}
-.message-wrap{
-  min-height:0;
-  border-top:1px solid var(--line);
-  padding-top:7px;
-  overflow:hidden;
-}
-.msg{
-  font-size:12px;
-  color:#5f6b60;
-  line-height:1.35;
-  display:-webkit-box;
-  -webkit-line-clamp:2;
-  -webkit-box-orient:vertical;
-  overflow:hidden;
+button:disabled{opacity:.42;cursor:not-allowed}
+.water{background:var(--green);color:var(--greenText)}
+.stop{background:var(--red);color:var(--redText)}
+.normal{background:var(--gray);color:#333}
+.test{background:#f2ead7;color:#65501f}
+.message-line{
+  margin-top:7px;padding-top:6px;border-top:1px solid var(--line);
+  font-size:11px;line-height:1.35;color:#606b61
 }
 .meta{
-  margin-top:4px;
-  color:#929992;
-  font-size:10px;
-  line-height:1.35;
-  display:-webkit-box;
-  -webkit-line-clamp:2;
-  -webkit-box-orient:vertical;
+  margin-top:3px;font-size:9.5px;line-height:1.3;color:#919891;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+}
+
+/* 日志：占剩余空间，但只在日志框内部滚动 */
+.log-card{
+  min-height:0;
+  flex:1 1 auto;
+  display:flex;
+  flex-direction:column;
   overflow:hidden;
 }
-.footer{
-  font-size:9px;
-  color:#a0a6a0;
-  text-align:center;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
+.log-head{
+  flex:0 0 auto;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:8px 10px 6px;border-bottom:1px solid var(--line)
 }
+.log-title{font-size:11px;color:var(--muted)}
+.log-actions{display:flex;gap:6px}
+.log-btn{
+  width:auto;height:26px;border-radius:8px;padding:0 9px;
+  font-size:11px;background:#edf0ed;color:#4e5850
+}
+.log-list{
+  min-height:0;
+  flex:1 1 auto;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  background:var(--log);
+  padding:6px 9px 8px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:10px;line-height:1.45;color:#586158
+}
+.log-item{
+  padding:3px 0;
+  border-bottom:1px dashed #e4e8e3;
+  word-break:break-word
+}
+.log-time{color:#9aa19a;margin-right:6px}
+.log-ok{color:#367b3e}
+.log-warn{color:#a66d19}
+.log-err{color:#a54444}
 .hidden{display:none!important}
 
-/* iPhone 16 Pro 竖屏（约393×852 CSS px）及更矮屏幕进一步压缩 */
 @media (max-height:760px){
-  .app{gap:6px;padding-top:max(5px,env(safe-area-inset-top));padding-bottom:max(5px,env(safe-area-inset-bottom))}
-  .hero{padding:9px 11px 8px}
-  .moisture{font-size:40px}
-  .mini{padding:7px 4px}
-  .controls{padding:8px;gap:5px}
-  button{height:42px;font-size:13px}
-  .msg{font-size:11px}
-  .meta{font-size:9px}
+  .app{gap:5px;padding-top:max(5px,env(safe-area-inset-top));padding-bottom:max(5px,env(safe-area-inset-bottom))}
+  .hero{padding:8px 10px 7px}
+  .title{font-size:20px}
+  .moisture{font-size:44px}
+  .mini{padding:6px 3px}
+  .mini .v{font-size:14px}
+  .controls{padding:7px}
+  button{height:40px;font-size:13px}
+  .message-line{font-size:10px}
+  .log-head{padding:6px 8px 5px}
+  .log-list{font-size:9.5px;padding:5px 8px}
 }
 </style>
 </head>
 <body>
 <main class="app">
 
-  <section class="hero">
+  <section class="hero card">
     <div class="head">
       <div class="title">🌱 妞妞的小花园</div>
       <div class="cloud"><span id="cloudDot" class="dot"></span><span id="cloudText">未连接</span></div>
     </div>
-
     <div id="cute" class="cute">妞妞正在等你连接云端～</div>
 
     <div class="hero-main">
@@ -262,15 +180,14 @@ button:disabled{opacity:.4;cursor:not-allowed}
   </section>
 
   <section class="status-grid">
-    <div class="mini"><div class="k">状态</div><div id="state" class="v">--</div></div>
-    <div class="mini"><div class="k">今日</div><div id="daily" class="v">--/3</div></div>
-    <div class="mini"><div class="k">自动</div><div id="auto" class="v">--</div></div>
-    <div class="mini"><div class="k">设备</div><div id="device" class="v">--</div></div>
+    <div class="mini card"><div class="k">状态</div><div id="state" class="v">--</div></div>
+    <div class="mini card"><div class="k">今日</div><div id="daily" class="v">--/3</div></div>
+    <div class="mini card"><div class="k">自动</div><div id="auto" class="v">--</div></div>
+    <div class="mini card"><div class="k">设备</div><div id="device" class="v">--</div></div>
   </section>
 
-  <section class="controls">
+  <section class="controls card">
     <div class="section-title">妞妞控制台</div>
-
     <div class="button-grid">
       <button id="waterBtn" class="water" disabled>💧 浇水一次</button>
       <button id="stopBtn" class="stop" disabled>■ 立即停止</button>
@@ -278,13 +195,18 @@ button:disabled{opacity:.4;cursor:not-allowed}
       <button id="statusBtn" class="normal" disabled>↻ 刷新状态</button>
       <button id="resetBtn" class="test hidden" disabled>🧪 清零次数</button>
     </div>
+    <div id="msg" class="message-line">尚未连接 EMQX Cloud。</div>
+    <div id="meta" class="meta"></div>
+  </section>
 
-    <div class="message-wrap">
-      <div id="msg" class="msg">尚未连接 EMQX Cloud。</div>
-      <div id="meta" class="meta"></div>
+  <section class="log-card card">
+    <div class="log-head">
+      <div class="log-title">运行日志</div>
+      <div class="log-actions">
+        <button id="clearLogBtn" class="log-btn">清空</button>
+      </div>
     </div>
-
-    <div class="footer">Niuniu Watering · MQTT over WSS</div>
+    <div id="logList" class="log-list"></div>
   </section>
 
 </main>
@@ -299,6 +221,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
   let client = null;
   let last = null;
   let connected = false;
+  let lastStateSignature = "";
 
   const $ = id => document.getElementById(id);
   const cloudDot = $("cloudDot"), cloudText = $("cloudText");
@@ -307,11 +230,37 @@ button:disabled{opacity:.4;cursor:not-allowed}
   const msgEl = $("msg"), metaEl = $("meta");
   const passwordEl = $("mqttPassword"), rememberEl = $("rememberPwd"), connectBtn = $("connectBtn"), loginBox = $("loginBox");
   const waterBtn = $("waterBtn"), stopBtn = $("stopBtn"), autoBtn = $("autoBtn"), statusBtn = $("statusBtn"), resetBtn = $("resetBtn");
+  const logList = $("logList"), clearLogBtn = $("clearLogBtn");
 
   const saved = localStorage.getItem("niuniu_mqtt_password");
-  if (saved) {
+  if(saved){
     passwordEl.value = saved;
     rememberEl.checked = true;
+  }
+
+  function nowText(){
+    const d = new Date();
+    return d.toLocaleTimeString("zh-CN",{hour12:false,hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  }
+
+  function addLog(text, type=""){
+    const row = document.createElement("div");
+    row.className = "log-item";
+    const cls = type ? ` log-${type}` : "";
+    row.innerHTML = `<span class="log-time">${nowText()}</span><span class="${cls.trim()}">${escapeHtml(text)}</span>`;
+    logList.prepend(row);
+
+    while(logList.children.length > 80){
+      logList.removeChild(logList.lastChild);
+    }
+  }
+
+  function escapeHtml(s){
+    return String(s)
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;");
   }
 
   function stateText(s){
@@ -335,7 +284,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
     return "妞妞和小花状态都不错";
   }
 
-  function setCloud(ok, text){
+  function setCloud(ok,text){
     connected = ok;
     cloudDot.className = "dot" + (ok ? " ok" : "");
     cloudText.textContent = text;
@@ -360,7 +309,9 @@ button:disabled{opacity:.4;cursor:not-allowed}
   }
 
   function render(d){
+    const old = last;
     last = d;
+
     moistureEl.textContent = d.sensorValid ? `${d.moisture}%` : "--%";
     stateEl.textContent = stateText(d.state);
     dailyEl.textContent = `${d.daily ?? "--"}/${d.maxDaily ?? 3}`;
@@ -378,16 +329,38 @@ button:disabled{opacity:.4;cursor:not-allowed}
     if(d.ip) items.push(`IP ${d.ip}`);
     metaEl.textContent = items.join(" ｜ ");
     msgEl.textContent = "状态已从 EMQX Cloud 更新";
+
+    const signature = `${d.state}|${d.daily}|${d.auto}|${d.online}|${d.sensorValid}|${d.moisture}`;
+    if(signature !== lastStateSignature){
+      if(!old){
+        addLog(`首次状态：湿度 ${d.moisture}% · ${stateText(d.state)} · 今日 ${d.daily}/${d.maxDaily}`, "ok");
+      }else{
+        if(old.state !== d.state) addLog(`状态：${stateText(old.state)} → ${stateText(d.state)}`, "ok");
+        if(old.daily !== d.daily) addLog(`今日浇水次数：${old.daily} → ${d.daily}`);
+        if(old.auto !== d.auto) addLog(`自动模式：${d.auto ? "开启" : "关闭"}`);
+        if(old.online !== d.online) addLog(`设备：${d.online === false ? "离线" : "在线"}`, d.online === false ? "err" : "ok");
+        if(old.sensorValid !== d.sensorValid) addLog(`传感器：${d.sensorValid ? "恢复正常" : "异常"}`, d.sensorValid ? "ok" : "err");
+      }
+      lastStateSignature = signature;
+    }
+
     updateControls();
   }
 
   function publish(cmd){
     if(!client || !connected){
       msgEl.textContent = "云端未连接。";
+      addLog(`命令 ${cmd} 发送失败：云端未连接`, "err");
       return;
     }
-    client.publish(COMMAND_TOPIC, cmd, {qos:0, retain:false}, err => {
-      msgEl.textContent = err ? `命令失败：${err.message}` : `已发送：${cmd}`;
+    addLog(`发送命令：${cmd}`);
+    client.publish(COMMAND_TOPIC,cmd,{qos:0,retain:false},err=>{
+      if(err){
+        msgEl.textContent = `命令失败：${err.message}`;
+        addLog(`命令 ${cmd} 失败：${err.message}`, "err");
+      }else{
+        msgEl.textContent = `已发送：${cmd}`;
+      }
     });
   }
 
@@ -398,73 +371,90 @@ button:disabled{opacity:.4;cursor:not-allowed}
       return;
     }
 
-    if(rememberEl.checked) localStorage.setItem("niuniu_mqtt_password", pwd);
+    if(rememberEl.checked) localStorage.setItem("niuniu_mqtt_password",pwd);
     else localStorage.removeItem("niuniu_mqtt_password");
 
     if(client){
-      try{ client.end(true); }catch(e){}
+      try{client.end(true)}catch(e){}
       client = null;
     }
 
-    setCloud(false, "连接中…");
+    setCloud(false,"连接中…");
     msgEl.textContent = "正在连接 EMQX Cloud…";
     connectBtn.disabled = true;
+    addLog("开始连接 EMQX Cloud…");
 
-    client = mqtt.connect(BROKER, {
-      username: USERNAME,
-      password: pwd,
-      clientId: "niuniu-web-" + Math.random().toString(16).slice(2,10),
-      clean: true,
-      reconnectPeriod: 3000,
-      connectTimeout: 10000,
-      protocolVersion: 4,
-      keepalive: 60
+    client = mqtt.connect(BROKER,{
+      username:USERNAME,
+      password:pwd,
+      clientId:"niuniu-web-"+Math.random().toString(16).slice(2,10),
+      clean:true,
+      reconnectPeriod:3000,
+      connectTimeout:10000,
+      protocolVersion:4,
+      keepalive:60
     });
 
-    client.on("connect", () => {
-      setCloud(true, "CLOUD+");
+    client.on("connect",()=>{
+      setCloud(true,"CLOUD+");
       connectBtn.disabled = false;
       loginBox.classList.add("hidden");
       msgEl.textContent = "云端已连接，正在读取状态…";
-      client.subscribe(STATUS_TOPIC, {qos:0}, err => {
-        if(err) msgEl.textContent = "订阅失败：" + err.message;
-        else publish("status");
+      addLog("EMQX Cloud 连接成功", "ok");
+
+      client.subscribe(STATUS_TOPIC,{qos:0},err=>{
+        if(err){
+          msgEl.textContent = "订阅失败："+err.message;
+          addLog("订阅 niuniu/status 失败："+err.message, "err");
+        }else{
+          addLog("已订阅 niuniu/status", "ok");
+          publish("status");
+        }
       });
     });
 
-    client.on("message", (topic, payload) => {
+    client.on("message",(topic,payload)=>{
       if(topic !== STATUS_TOPIC) return;
-      try{ render(JSON.parse(payload.toString())); }
-      catch(e){ msgEl.textContent = "状态数据解析失败。"; }
+      try{
+        render(JSON.parse(payload.toString()));
+      }catch(e){
+        msgEl.textContent = "状态数据解析失败。";
+        addLog("收到状态，但 JSON 解析失败", "err");
+      }
     });
 
-    client.on("reconnect", () => {
-      setCloud(false, "重连中…");
+    client.on("reconnect",()=>{
+      setCloud(false,"重连中…");
       msgEl.textContent = "云端中断，正在自动重连…";
+      addLog("云端连接中断，尝试重连", "warn");
     });
 
-    client.on("offline", () => {
-      setCloud(false, "CLOUD-");
+    client.on("offline",()=>{
+      setCloud(false,"CLOUD-");
       msgEl.textContent = "当前无法连接云端。";
+      addLog("EMQX Cloud 离线", "err");
     });
 
-    client.on("close", () => setCloud(false, "CLOUD-"));
+    client.on("close",()=>setCloud(false,"CLOUD-"));
 
-    client.on("error", err => {
-      setCloud(false, "连接失败");
+    client.on("error",err=>{
+      setCloud(false,"连接失败");
       connectBtn.disabled = false;
       loginBox.classList.remove("hidden");
       msgEl.textContent = "连接失败，请检查 MQTT 密码和网络。";
-      console.error(err);
+      addLog("云端连接失败："+err.message, "err");
     });
   }
 
-  connectBtn.addEventListener("click", connectCloud);
-  waterBtn.addEventListener("click", () => { if(confirm("确认执行一次浇水吗？")) publish("water"); });
-  stopBtn.addEventListener("click", () => publish("stop"));
-  autoBtn.addEventListener("click", () => { if(last) publish(last.auto ? "auto_off" : "auto_on"); });
-  statusBtn.addEventListener("click", () => publish("status"));
-  resetBtn.addEventListener("click", () => { if(confirm("TEST 模式：确认清零今日次数？")) publish("test_reset"); });
+  connectBtn.addEventListener("click",connectCloud);
+  waterBtn.addEventListener("click",()=>{if(confirm("确认执行一次浇水吗？")) publish("water")});
+  stopBtn.addEventListener("click",()=>publish("stop"));
+  autoBtn.addEventListener("click",()=>{if(last) publish(last.auto ? "auto_off" : "auto_on")});
+  statusBtn.addEventListener("click",()=>publish("status"));
+  resetBtn.addEventListener("click",()=>{if(confirm("TEST 模式：确认清零今日次数？")) publish("test_reset")});
+  clearLogBtn.addEventListener("click",()=>{logList.innerHTML=""; addLog("日志已清空")});
+
+  addLog("页面已打开，等待连接云端");
 })();
 </script>
 </body>
