@@ -26,7 +26,7 @@ export default {
           webhookConfigured: Boolean(env.EMQX_WEBHOOK_TOKEN),
           accessAuthenticated: hasAccessIdentity(request),
           commandProtected: env.REQUIRE_ACCESS !== "true" || hasAccessIdentity(request),
-          build: "2026-09-18-await-fix-1",
+          build: "2026-09-18-d1-read-opt-1",
           ts: Math.floor(Date.now() / 1000),
         });
       }
@@ -86,8 +86,12 @@ async function getStatus(env) {
   let row = null;
   try {
     row = await env.DB.prepare(
-      `SELECT * FROM device_state ORDER BY ts DESC LIMIT 1`
-    ).first();
+      `SELECT device_id, ts, moisture, raw, sensor_valid, state, daily, max_daily,
+              auto_mode, pump, source, event_id, interval_remaining, countdown, ip, test
+       FROM device_state
+       WHERE device_id = ?1
+       LIMIT 1`
+    ).bind("niuniu-main").first();
   } catch (error) {
     if (!isMissingTableError(error, "device_state")) throw error;
     console.warn("device_state_missing_fallback_to_soil_history");
@@ -124,7 +128,9 @@ async function getStatus(env) {
 
   const fallback = await env.DB.prepare(
     `SELECT device_id, ts, moisture, raw, sensor_valid, state, pump, auto_mode
-     FROM soil_history ORDER BY ts DESC LIMIT 1`
+     FROM soil_history
+     ORDER BY id DESC
+     LIMIT 1`
   ).first();
 
   if (!fallback) {
@@ -153,7 +159,7 @@ async function getStatus(env) {
 
 async function getWateringEvents(url, env) {
   const days = clampInt(url.searchParams.get("days"), 1, 30, 7);
-  const limit = clampInt(url.searchParams.get("limit"), 1, 200, 100);
+  const limit = clampInt(url.searchParams.get("limit"), 1, 100, 30);
   const since = Math.floor(Date.now() / 1000) - days * 86400;
 
   try {
@@ -163,8 +169,8 @@ async function getWateringEvents(url, env) {
               after_moisture, after_raw, daily, max_daily,
               pump_on_confirmed, pump_off_confirmed, test, result, last_phase, updated_at
        FROM watering_events
-       WHERE COALESCE(started_at, updated_at) >= ?1
-       ORDER BY COALESCE(started_at, updated_at) DESC
+       WHERE updated_at >= ?1
+       ORDER BY updated_at DESC
        LIMIT ?2`
     ).bind(since, limit).all();
 
@@ -180,31 +186,58 @@ async function getHistory(url, env) {
   const days = clampInt(url.searchParams.get("days"), 1, 30, 7);
   const since = Math.floor(Date.now() / 1000) - days * 86400;
 
-  const [soil, weather, watering] = await Promise.all([
+  // Keep D1 read cost bounded even before timestamp indexes are applied.
+  // soil_history/weather_history both use INTEGER PRIMARY KEY AUTOINCREMENT id,
+  // so reading the latest N rows by id avoids repeated full-table scans.
+  const soilReadCap = clampInt(url.searchParams.get("soilLimit"), 100, 3000, 2000);
+  const weatherReadCap = clampInt(url.searchParams.get("weatherLimit"), 100, 3000, 2000);
+  const wateringReadCap = clampInt(url.searchParams.get("wateringLimit"), 20, 500, 200);
+
+  const [soilResult, weatherResult, wateringResult] = await Promise.all([
     env.DB.prepare(
       `SELECT ts, device_id, moisture, raw, sensor_valid, state, pump, auto_mode
-       FROM soil_history WHERE ts >= ?1 ORDER BY ts ASC LIMIT 10000`
-    ).bind(since).all(),
+       FROM soil_history
+       ORDER BY id DESC
+       LIMIT ?1`
+    ).bind(soilReadCap).all(),
     env.DB.prepare(
       `SELECT ts, temperature_c, humidity_pct, location, source
-       FROM weather_history WHERE ts >= ?1 ORDER BY ts ASC LIMIT 10000`
-    ).bind(since).all(),
+       FROM weather_history
+       ORDER BY id DESC
+       LIMIT ?1`
+    ).bind(weatherReadCap).all(),
     env.DB.prepare(
       `SELECT event_id, source, started_at, stopped_at, verified_at,
               planned_seconds, actual_seconds, before_moisture, after_moisture,
-              result, last_phase, test
+              result, last_phase, test, updated_at
        FROM watering_events
-       WHERE COALESCE(started_at, updated_at) >= ?1
-       ORDER BY COALESCE(started_at, updated_at) ASC LIMIT 1000`
-    ).bind(since).all(),
+       ORDER BY updated_at DESC
+       LIMIT ?1`
+    ).bind(wateringReadCap).all(),
   ]);
+
+  const soil = (soilResult.results || [])
+    .filter((row) => Number(row.ts || 0) >= since)
+    .reverse();
+  const weather = (weatherResult.results || [])
+    .filter((row) => Number(row.ts || 0) >= since)
+    .reverse();
+  const watering = (wateringResult.results || [])
+    .filter((row) => Number(row.updated_at || row.started_at || 0) >= since)
+    .reverse();
 
   return json({
     ok: true,
     days,
-    soil: soil.results || [],
-    weather: weather.results || [],
-    watering: watering.results || [],
+    boundedReads: true,
+    readCaps: {
+      soil: soilReadCap,
+      weather: weatherReadCap,
+      watering: wateringReadCap,
+    },
+    soil,
+    weather,
+    watering,
   });
 }
 
