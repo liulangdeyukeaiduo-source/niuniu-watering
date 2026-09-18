@@ -4,7 +4,7 @@
 
 ## Architecture
 
-- ESP32-S3 publishes MQTT status and watering events to EMQX Cloud.
+- ESP32-S3 publishes MQTT status and watering events to EMQX Cloud Global (Asia-Pacific).
 - EMQX forwards status/events to the Worker webhook endpoint.
 - The Worker stores state and history in Cloudflare D1.
 - The browser talks only to the Worker over HTTPS; MQTT credentials are never exposed to the browser.
@@ -49,3 +49,18 @@ Configure these in Cloudflare, never commit their values:
 - `EMQX_WEBHOOK_TOKEN`
 
 Non-secret deployment configuration lives in `wrangler.jsonc`.
+
+
+## Global EMQX deployment (2026-09-18)
+
+- MQTT host: `h1730b1a.ala.asia-southeast1.emqxsl.com`
+- MQTT TLS port: `8883`
+- WSS port: `8084`
+- REST API base: `https://h1730b1a.ala.asia-southeast1.emqxsl.com:8443/api/v5`
+- Deployment App ID: `z8668161`
+- `EMQX_APP_SECRET` remains a Cloudflare Worker Secret and must be updated in the Cloudflare dashboard; it is never committed to Git.
+- The previous Shenzhen deployment is retained only as a rollback path until the ESP32 cutover is fully verified.
+
+## Runtime bootstrap note
+
+Worker runtime schema bootstrap never stores D1 I/O promises in module-global state. Only a plain boolean is cached per isolate after successful idempotent DDL, avoiding cross-request I/O reuse.
