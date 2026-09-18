@@ -4,6 +4,10 @@
   "main": "src/worker.js",
   "compatibility_date": "2026-09-18",
   "keep_vars": true,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
   "vars": {
     "EMQX_API_BASE": "https://h1730b1a.ala.asia-southeast1.emqxsl.com:8443/api/v5",
     "EMQX_APP_ID": "z8668161",
