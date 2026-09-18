@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f4f7f2">
+  <title>妞妞的小花园</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="app">
+    <section class="hero card">
+      <div class="head-row">
+        <div>
+          <div class="eyebrow">NIUNIU WATERING · V3</div>
+          <h1>🌱 妞妞的小花园</h1>
+        </div>
+        <div class="cloud"><span id="cloudDot" class="dot"></span><span id="cloudText">检查中</span></div>
+      </div>
+      <div class="hero-main">
+        <div>
+          <div id="moisture" class="moisture">--%</div>
+          <div class="muted">当前土壤湿度</div>
+        </div>
+        <div id="heroHint" class="hero-hint">正在读取设备状态…</div>
+      </div>
+    </section>
+
+    <section class="status-grid">
+      <div class="mini card"><div class="k">设备</div><div id="device" class="v">--</div></div>
+      <div class="mini card"><div class="k">状态</div><div id="state" class="v">--</div></div>
+      <div class="mini card"><div class="k">今日</div><div id="daily" class="v">--/3</div></div>
+      <div class="mini card"><div class="k">自动</div><div id="auto" class="v">--</div></div>
+    </section>
+
+    <section class="controls card">
+      <div class="section-head">
+        <div>
+          <div class="section-title">远程控制</div>
+          <div id="controlHint" class="section-sub">控制通道检查中…</div>
+        </div>
+        <button id="refreshBtn" class="ghost">刷新</button>
+      </div>
+      <div class="button-grid">
+        <button id="waterBtn" class="water" disabled>💧 浇水一次</button>
+        <button id="stopBtn" class="stop" disabled>■ 立即停止</button>
+        <button id="autoBtn" class="normal" disabled>自动浇水</button>
+        <button id="statusBtn" class="normal" disabled>↻ 请求状态</button>
+        <button id="resetBtn" class="test hidden" disabled>🧪 清零次数</button>
+      </div>
+      <div id="message" class="message">系统初始化中。</div>
+      <div id="meta" class="meta"></div>
+    </section>
+
+    <section class="events card">
+      <div class="section-head">
+        <div>
+          <div class="section-title">最近浇水</div>
+          <div class="section-sub">自动 / 手动动作统一记录</div>
+        </div>
+        <div id="eventCount" class="badge">0</div>
+      </div>
+      <div id="eventList" class="event-list">
+        <div class="empty">暂无浇水事件</div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
