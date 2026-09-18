@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "niuniu-watering-v3",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-09-18",
+  "keep_vars": true,
+  "vars": {
+    "EMQX_API_BASE": "https://i4b43111.ala.cn-shenzhen.emqxsl.cn:8443/api/v5",
+    "EMQX_APP_ID": "e1613633",
+    "REQUIRE_ACCESS": "true"
+  },
+  "secrets": {
+    "required": [
+      "EMQX_APP_SECRET",
+      "EMQX_WEBHOOK_TOKEN"
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "niuniu-watering-history",
+      "database_id": "7d960cd2-16a0-4112-9669-548100a543aa"
+    }
+  ],
+  "assets": {
+    "directory": "./public/",
+    "run_worker_first": [
+      "/api/*",
+      "/ingest/*"
+    ]
+  }
+}
