@@ -1,0 +1,14 @@
+{
+  "name": "niuniu-watering",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate:remote": "wrangler d1 migrations apply niuniu-watering-history --remote"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
