@@ -64,3 +64,15 @@ Non-secret deployment configuration lives in `wrangler.jsonc`.
 ## Runtime bootstrap note
 
 Worker runtime schema bootstrap never stores D1 I/O promises in module-global state. Only a plain boolean is cached per isolate after successful idempotent DDL, avoiding cross-request I/O reuse.
+
+
+## D1 read-budget optimization (2026-09-18)
+
+The dashboard is designed to stay within the D1 free-tier read budget:
+
+- Current device state is fetched by `device_state.device_id` primary key.
+- Legacy fallback reads the newest `soil_history` row by integer primary key `id`, not by an unindexed timestamp sort.
+- History endpoints use bounded recent-row reads (default 2,000 soil + 2,000 weather + 200 watering rows maximum per request) and filter the requested time window in the Worker.
+- Browser polling pauses while the tab is hidden.
+- Status polling is 15 seconds; watering-event polling is 5 minutes, with immediate refresh after a command.
+- Timestamp indexes are provided in migration `0002_query_indexes.sql` for production application after quota reset/approval.
