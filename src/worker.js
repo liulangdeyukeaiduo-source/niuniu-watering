@@ -12,24 +12,11 @@ const COMMANDS = new Set([
   "test_reset",
 ]);
 
-let schemaReady = false;
-
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
     try {
-      const requiresSchema =
-        url.pathname === "/api/status" ||
-        url.pathname === "/api/watering-events" ||
-        url.pathname === "/api/history" ||
-        url.pathname === "/api/command" ||
-        url.pathname === "/ingest/emqx";
-
-      if (requiresSchema) {
-        await ensureSchema(env);
-      }
-
       if (url.pathname === "/api/health" && request.method === "GET") {
         return json({
           ok: true,
@@ -90,81 +77,16 @@ function hasAccessIdentity(request) {
   );
 }
 
-async function ensureSchema(env) {
-  if (!env.DB) throw new Error("D1 binding DB is missing");
-  if (schemaReady) return;
-
-  try {
-    await env.DB.batch([
-      env.DB.prepare(`CREATE TABLE IF NOT EXISTS watering_events (
-        event_id TEXT PRIMARY KEY,
-        device_id TEXT NOT NULL,
-        source TEXT NOT NULL DEFAULT 'UNKNOWN',
-        started_at INTEGER,
-        stopped_at INTEGER,
-        verified_at INTEGER,
-        planned_seconds INTEGER,
-        actual_seconds INTEGER,
-        before_moisture INTEGER,
-        before_raw INTEGER,
-        after_moisture INTEGER,
-        after_raw INTEGER,
-        daily INTEGER,
-        max_daily INTEGER,
-        pump_on_confirmed INTEGER NOT NULL DEFAULT 0,
-        pump_off_confirmed INTEGER NOT NULL DEFAULT 0,
-        test INTEGER NOT NULL DEFAULT 0,
-        result TEXT,
-        last_phase TEXT,
-        updated_at INTEGER NOT NULL
-      )`),
-      env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_watering_events_started_at
-        ON watering_events(started_at DESC)`),
-      env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_watering_events_device_started
-        ON watering_events(device_id, started_at DESC)`),
-      env.DB.prepare(`CREATE TABLE IF NOT EXISTS device_state (
-        device_id TEXT PRIMARY KEY,
-        ts INTEGER NOT NULL,
-        moisture INTEGER,
-        raw INTEGER,
-        sensor_valid INTEGER,
-        state TEXT,
-        daily INTEGER,
-        max_daily INTEGER,
-        auto_mode INTEGER,
-        pump INTEGER,
-        source TEXT,
-        event_id TEXT,
-        interval_remaining INTEGER,
-        countdown INTEGER,
-        ip TEXT,
-        test INTEGER,
-        payload_json TEXT NOT NULL
-      )`),
-      env.DB.prepare(`CREATE TABLE IF NOT EXISTS command_audit (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        ts INTEGER NOT NULL,
-        command TEXT NOT NULL,
-        actor TEXT,
-        access_authenticated INTEGER NOT NULL DEFAULT 0,
-        emqx_http_status INTEGER,
-        emqx_response TEXT
-      )`),
-      env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_command_audit_ts
-        ON command_audit(ts DESC)`),
-    ]);
-    schemaReady = true;
-  } catch (error) {
-    schemaReady = false;
-    console.error("schema_init_failed", error);
-    throw error;
-  }
-}
-
 async function getStatus(env) {
-  const row = await env.DB.prepare(
-    `SELECT * FROM device_state ORDER BY ts DESC LIMIT 1`
-  ).first();
+  let row = null;
+  try {
+    row = await env.DB.prepare(
+      `SELECT * FROM device_state ORDER BY ts DESC LIMIT 1`
+    ).first();
+  } catch (error) {
+    if (!isMissingTableError(error, "device_state")) throw error;
+    console.warn("device_state_missing_fallback_to_soil_history");
+  }
 
   if (row) {
     const ageSeconds = Math.max(0, Math.floor(Date.now() / 1000) - Number(row.ts || 0));
@@ -229,18 +151,24 @@ async function getWateringEvents(url, env) {
   const limit = clampInt(url.searchParams.get("limit"), 1, 200, 100);
   const since = Math.floor(Date.now() / 1000) - days * 86400;
 
-  const result = await env.DB.prepare(
-    `SELECT event_id, device_id, source, started_at, stopped_at, verified_at,
-            planned_seconds, actual_seconds, before_moisture, before_raw,
-            after_moisture, after_raw, daily, max_daily,
-            pump_on_confirmed, pump_off_confirmed, test, result, last_phase, updated_at
-     FROM watering_events
-     WHERE COALESCE(started_at, updated_at) >= ?1
-     ORDER BY COALESCE(started_at, updated_at) DESC
-     LIMIT ?2`
-  ).bind(since, limit).all();
+  try {
+    const result = await env.DB.prepare(
+      `SELECT event_id, device_id, source, started_at, stopped_at, verified_at,
+              planned_seconds, actual_seconds, before_moisture, before_raw,
+              after_moisture, after_raw, daily, max_daily,
+              pump_on_confirmed, pump_off_confirmed, test, result, last_phase, updated_at
+       FROM watering_events
+       WHERE COALESCE(started_at, updated_at) >= ?1
+       ORDER BY COALESCE(started_at, updated_at) DESC
+       LIMIT ?2`
+    ).bind(since, limit).all();
 
-  return json({ ok: true, days, events: result.results || [] });
+    return json({ ok: true, days, events: result.results || [] });
+  } catch (error) {
+    if (!isMissingTableError(error, "watering_events")) throw error;
+    console.warn("watering_events_missing_return_empty");
+    return json({ ok: true, days, events: [], migrationRequired: true });
+  }
 }
 
 async function getHistory(url, env) {
@@ -320,18 +248,23 @@ async function sendCommand(request, env) {
   const responseText = await response.text();
   const actor = request.headers.get("Cf-Access-Authenticated-User-Email") || "access-user";
 
-  await env.DB.prepare(
-    `INSERT INTO command_audit
-      (ts, command, actor, access_authenticated, emqx_http_status, emqx_response)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
-  ).bind(
-    Math.floor(Date.now() / 1000),
-    command,
-    actor,
-    accessAuthenticated ? 1 : 0,
-    response.status,
-    responseText.slice(0, 2000)
-  ).run();
+  try {
+    await env.DB.prepare(
+      `INSERT INTO command_audit
+        (ts, command, actor, access_authenticated, emqx_http_status, emqx_response)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
+    ).bind(
+      Math.floor(Date.now() / 1000),
+      command,
+      actor,
+      accessAuthenticated ? 1 : 0,
+      response.status,
+      responseText.slice(0, 2000)
+    ).run();
+  } catch (error) {
+    if (!isMissingTableError(error, "command_audit")) throw error;
+    console.warn("command_audit_missing_skip_audit");
+  }
 
   let emqxBody;
   try { emqxBody = JSON.parse(responseText); }
@@ -565,6 +498,11 @@ function clampInt(value, min, max, fallback) {
   const n = Number.parseInt(value, 10);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, n));
+}
+
+function isMissingTableError(error, tableName) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return message.includes("no such table") && message.includes(tableName);
 }
 
 function timingSafeEqual(a, b) {
