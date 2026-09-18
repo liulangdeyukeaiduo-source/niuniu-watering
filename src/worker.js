@@ -12,14 +12,21 @@ const COMMANDS = new Set([
   "test_reset",
 ]);
 
-let schemaReadyPromise;
+let schemaReady = false;
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
     try {
-      if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/ingest/")) {
+      const requiresSchema =
+        url.pathname === "/api/status" ||
+        url.pathname === "/api/watering-events" ||
+        url.pathname === "/api/history" ||
+        url.pathname === "/api/command" ||
+        url.pathname === "/ingest/emqx";
+
+      if (requiresSchema) {
         await ensureSchema(env);
       }
 
@@ -85,8 +92,10 @@ function hasAccessIdentity(request) {
 
 async function ensureSchema(env) {
   if (!env.DB) throw new Error("D1 binding DB is missing");
-  if (!schemaReadyPromise) {
-    schemaReadyPromise = env.DB.batch([
+  if (schemaReady) return;
+
+  try {
+    await env.DB.batch([
       env.DB.prepare(`CREATE TABLE IF NOT EXISTS watering_events (
         event_id TEXT PRIMARY KEY,
         device_id TEXT NOT NULL,
@@ -143,12 +152,13 @@ async function ensureSchema(env) {
       )`),
       env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_command_audit_ts
         ON command_audit(ts DESC)`),
-    ]).catch((error) => {
-      schemaReadyPromise = undefined;
-      throw error;
-    });
+    ]);
+    schemaReady = true;
+  } catch (error) {
+    schemaReady = false;
+    console.error("schema_init_failed", error);
+    throw error;
   }
-  return schemaReadyPromise;
 }
 
 async function getStatus(env) {
