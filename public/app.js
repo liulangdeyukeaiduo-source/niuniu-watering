@@ -147,7 +147,7 @@ async function sendCommand(command){
     });
     setMessage(`命令已发送：${command}`, "ok");
     await new Promise(r=>setTimeout(r,700));
-    await loadStatus();
+    await Promise.all([loadStatus(), loadEvents()]);
   }catch(error){
     if(error.status === 403){
       setMessage("远程控制尚未开放：请先启用 Cloudflare Access。", "err");
@@ -180,6 +180,33 @@ async function refreshAll(){
   updateControls();
 }
 
+let statusTimer = null;
+let eventsTimer = null;
+
+function stopPolling(){
+  if(statusTimer) clearInterval(statusTimer);
+  if(eventsTimer) clearInterval(eventsTimer);
+  statusTimer = null;
+  eventsTimer = null;
+}
+
+function startPolling(){
+  stopPolling();
+  if(document.hidden) return;
+  // Status still feels near-real-time while cutting D1 reads by ~3x.
+  statusTimer = setInterval(loadStatus, 15000);
+  // Watering events change infrequently; commands trigger an immediate refresh.
+  eventsTimer = setInterval(loadEvents, 300000);
+}
+
+document.addEventListener("visibilitychange", async ()=>{
+  if(document.hidden){
+    stopPolling();
+    return;
+  }
+  await refreshAll();
+  startPolling();
+});
+
 await refreshAll();
-setInterval(loadStatus, 5000);
-setInterval(loadEvents, 30000);
+startPolling();
