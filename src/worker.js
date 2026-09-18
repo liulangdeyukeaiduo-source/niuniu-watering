@@ -26,28 +26,29 @@ export default {
           webhookConfigured: Boolean(env.EMQX_WEBHOOK_TOKEN),
           accessAuthenticated: hasAccessIdentity(request),
           commandProtected: env.REQUIRE_ACCESS !== "true" || hasAccessIdentity(request),
+          build: "2026-09-18-await-fix-1",
           ts: Math.floor(Date.now() / 1000),
         });
       }
 
       if (url.pathname === "/api/status" && request.method === "GET") {
-        return getStatus(env);
+        return await getStatus(env);
       }
 
       if (url.pathname === "/api/watering-events" && request.method === "GET") {
-        return getWateringEvents(url, env);
+        return await getWateringEvents(url, env);
       }
 
       if (url.pathname === "/api/history" && request.method === "GET") {
-        return getHistory(url, env);
+        return await getHistory(url, env);
       }
 
       if (url.pathname === "/api/command" && request.method === "POST") {
-        return sendCommand(request, env);
+        return await sendCommand(request, env);
       }
 
       if (url.pathname === "/ingest/emqx" && request.method === "POST") {
-        return ingestEmqx(request, env);
+        return await ingestEmqx(request, env);
       }
 
       if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/ingest/")) {
@@ -56,7 +57,11 @@ export default {
 
       return new Response("Not found", { status: 404 });
     } catch (error) {
-      console.error("request_failed", error);
+      console.error("request_failed", {
+        pathname: url.pathname,
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       return json({
         ok: false,
         error: "internal_error",
