@@ -56,7 +56,7 @@
       <div class="section-head trend-head">
         <div>
           <div class="section-title">7 天环境趋势</div>
-          <div class="section-sub">土壤湿度 / 环境湿度 / 温度 · 浇水动作同步标记</div>
+          <div class="section-sub">土壤湿度 / 环境湿度 / 温度 · 浇水阴影同步标记</div>
         </div>
         <button id="trendRefreshBtn" class="ghost">更新图表</button>
       </div>
@@ -71,14 +71,15 @@
         <span><i class="legend-line soil"></i>土壤湿度</span>
         <span><i class="legend-line humidity"></i>环境湿度</span>
         <span><i class="legend-line temp"></i>温度</span>
-        <span><i class="legend-dot watering"></i>浇水</span>
+        <span><i class="legend-band watering"></i>浇水时段</span>
       </div>
 
-      <div class="trend-box">
+      <div id="trendBox" class="trend-box">
         <svg id="trendSvg" class="trend-svg" viewBox="0 0 520 240" role="img" aria-label="最近七天环境趋势折线图"></svg>
+        <div id="trendTooltip" class="trend-tooltip hidden" role="status" aria-live="polite"></div>
         <div id="trendEmpty" class="trend-empty">正在读取历史数据…</div>
       </div>
-      <div id="trendMeta" class="trend-meta">历史数据只在进入页面和点击“更新图表”时读取，避免高频占用 D1。</div>
+      <div id="trendMeta" class="trend-meta">电脑端悬浮、手机端轻触图表可查看时点数据。历史数据仅按需读取，避免高频占用 D1。</div>
     </section>
 
     <section class="events card">
