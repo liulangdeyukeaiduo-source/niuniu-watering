@@ -494,6 +494,7 @@ function bindTrendPointer(hit){
 function showTrendPointer(event){
   const model = trendModel;
   if(!model || trendPan?.moved) return;
+  if(event.pointerType === "touch" && !event.isPrimary) return;
 
   const svgRect = ui.trendSvg.getBoundingClientRect();
   if(!svgRect.width || !svgRect.height) return;
@@ -710,23 +711,59 @@ ui.zoomOutBtn.addEventListener("click",()=>zoomTrend(2));
 ui.zoomResetBtn.addEventListener("click",resetTrendView);
 
 // Pan the zoomed view without any new D1 query.
+// Mobile Safari safety:
+// - only the primary finger participates;
+// - do not capture on pointerdown;
+// - take over only after a clear horizontal gesture;
+// - vertical gestures stay available for normal page scrolling.
 ui.trendBox.addEventListener("pointerdown",(event)=>{
   if(!trendModel || trendViewHours >= trendHours - 0.01) return;
+  if(event.pointerType === "touch" && !event.isPrimary) return;
+
   trendPan = {
     pointerId:event.pointerId,
+    pointerType:event.pointerType,
     startX:event.clientX,
+    startY:event.clientY,
     startOffset:trendEndOffsetHours,
     moved:false,
+    captured:false,
   };
-  ui.trendBox.setPointerCapture?.(event.pointerId);
 });
 
 ui.trendBox.addEventListener("pointermove",(event)=>{
   if(!trendPan || trendPan.pointerId !== event.pointerId) return;
+  if(event.pointerType === "touch" && !event.isPrimary) return;
+
   const width = Math.max(1, ui.trendBox.getBoundingClientRect().width);
   const dx = event.clientX - trendPan.startX;
-  if(Math.abs(dx) > 4) trendPan.moved = true;
-  if(!trendPan.moved) return;
+  const dy = event.clientY - trendPan.startY;
+
+  if(!trendPan.moved){
+    const horizontalIntent =
+      Math.abs(dx) >= 8 &&
+      Math.abs(dx) > Math.abs(dy) * 1.15;
+
+    const verticalIntent =
+      Math.abs(dy) >= 8 &&
+      Math.abs(dy) >= Math.abs(dx);
+
+    if(verticalIntent){
+      trendPan = null;
+      return;
+    }
+
+    if(!horizontalIntent) return;
+
+    trendPan.moved = true;
+    try{
+      ui.trendBox.setPointerCapture?.(event.pointerId);
+      trendPan.captured = true;
+    }catch{}
+    hideTrendTooltip();
+  }
+
+  if(event.cancelable) event.preventDefault();
 
   const deltaHours = dx / width * trendViewHours;
   const nextOffset = clamp(
@@ -734,6 +771,7 @@ ui.trendBox.addEventListener("pointermove",(event)=>{
     0,
     Math.max(0, trendHours-trendViewHours)
   );
+
   if(Math.abs(nextOffset-trendEndOffsetHours) >= 0.01){
     trendEndOffsetHours = nextOffset;
     renderTrend();
@@ -743,8 +781,11 @@ ui.trendBox.addEventListener("pointermove",(event)=>{
 function finishTrendPan(event){
   if(!trendPan || trendPan.pointerId !== event.pointerId) return;
   const moved = trendPan.moved;
+  const captured = trendPan.captured;
   trendPan = null;
-  try{ ui.trendBox.releasePointerCapture?.(event.pointerId); }catch{}
+  if(captured){
+    try{ ui.trendBox.releasePointerCapture?.(event.pointerId); }catch{}
+  }
   if(moved) hideTrendTooltip();
 }
 ui.trendBox.addEventListener("pointerup",finishTrendPan);
