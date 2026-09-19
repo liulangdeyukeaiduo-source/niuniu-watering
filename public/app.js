@@ -9,6 +9,7 @@ const ui = {
   trendBox: $("trendBox"), trendSvg: $("trendSvg"), trendTooltip: $("trendTooltip"),
   trendEmpty: $("trendEmpty"), trendMeta: $("trendMeta"), trendRefreshBtn: $("trendRefreshBtn"),
   trendTitle: $("trendTitle"), zoomOutBtn: $("zoomOutBtn"), zoomInBtn: $("zoomInBtn"), zoomResetBtn: $("zoomResetBtn"),
+  liveStrip: $("liveStrip"),
 };
 
 let health = null;
@@ -20,6 +21,13 @@ let trendViewHours = 168;
 let trendEndOffsetHours = 0;
 let trendModel = null;
 let trendPan = null;
+let eventsCache = [];
+let historyCursorMs = 0;
+let latestStatusResult = null;
+let lastStatusReceivedAt = 0;
+let lastRenderedMoisture = null;
+let statusRequestInFlight = false;
+let deltaRequestInFlight = false;
 
 function stateText(value){
   const map = {monitoring:"监测",pumping:"浇水",soaking:"渗透",locked:"闭锁",sensor_fault:"传感器故障",pump_fault:"水泵故障"};
@@ -72,15 +80,25 @@ async function loadHealth(){
 }
 
 async function loadStatus(){
+  if(statusRequestInFlight) return;
+  statusRequestInFlight = true;
   try{
     const result = await api("/api/status");
+    latestStatusResult = result;
+    lastStatusReceivedAt = Date.now();
     status = result.data;
     renderStatus(result);
   }catch(error){
     document.body.classList.remove("watering-active");
     ui.device.textContent = "异常";
     ui.heroHint.textContent = "状态读取失败";
+    if(ui.liveStrip){
+      ui.liveStrip.className = "live-strip offline";
+      ui.liveStrip.textContent = "实时状态读取失败，正在自动重试";
+    }
     setMessage(`状态读取失败：${error.message}`, "err");
+  }finally{
+    statusRequestInFlight = false;
   }
 }
 
@@ -101,7 +119,7 @@ function renderStatus(result){
   const wateringNow = d.online && d.state === "pumping";
   document.body.classList.toggle("watering-active", wateringNow);
 
-  ui.moisture.textContent = d.sensorValid ? `${d.moisture}%` : "--%";
+  updateMoistureDisplay(d);
   ui.device.textContent = d.online ? "在线" : "离线";
   ui.state.textContent = stateText(d.state);
   ui.daily.textContent = `${d.daily ?? "--"}/${d.maxDaily ?? 3}`;
@@ -128,8 +146,89 @@ function renderStatus(result){
   ui.resetBtn.classList.remove("hidden");
   ui.autoBtn.textContent = d.auto ? "关闭自动" : "开启自动";
   updateControls();
+  renderRealtimeTick();
 
   if(trendModel) renderTrend();
+}
+
+function updateMoistureDisplay(d){
+  const next = d?.sensorValid ? Number(d.moisture) : null;
+  const text = Number.isFinite(next) ? `${next}%` : "--%";
+
+  if(lastRenderedMoisture !== null && Number.isFinite(next) && next !== lastRenderedMoisture){
+    ui.moisture.classList.remove("changed");
+    void ui.moisture.offsetWidth;
+    ui.moisture.classList.add("changed");
+    setTimeout(()=>ui.moisture.classList.remove("changed"), 420);
+  }
+
+  ui.moisture.textContent = text;
+  lastRenderedMoisture = Number.isFinite(next) ? next : null;
+}
+
+function currentStatusAgeSeconds(){
+  if(!latestStatusResult || !lastStatusReceivedAt) return 0;
+  const base = Number(latestStatusResult.ageSeconds || 0);
+  const elapsed = Math.max(0, Math.floor((Date.now() - lastStatusReceivedAt) / 1000));
+  return base + elapsed;
+}
+
+function renderRealtimeTick(){
+  if(!ui.liveStrip) return;
+
+  const d = status;
+  if(!d){
+    ui.liveStrip.className = "live-strip syncing";
+    ui.liveStrip.textContent = "正在同步实时状态…";
+    return;
+  }
+
+  const age = currentStatusAgeSeconds();
+  const daily = d.daily ?? "--";
+  const maxDaily = d.maxDaily ?? 3;
+  const moistureText = d.sensorValid ? `${d.moisture}%` : "--";
+  const vpdText = Number.isFinite(Number(d.vpd)) && d.environmentValid
+    ? ` · VPD ${Number(d.vpd).toFixed(2)} kPa`
+    : "";
+
+  if(!d.online || age > 90){
+    ui.liveStrip.className = "live-strip stale";
+    ui.liveStrip.textContent = `设备状态已过期 · 最近数据约 ${age}s 前`;
+    ui.heroHint.textContent = "等待设备恢复实时上报";
+    return;
+  }
+
+  if(d.state === "pumping"){
+    const remaining = Math.max(0, Number(d.countdown || 0) - age);
+    ui.liveStrip.className = "live-strip watering";
+    ui.liveStrip.textContent = `正在浇水 · 剩余约 ${remaining}s · 今日 ${daily}/${maxDaily}`;
+    ui.heroHint.textContent = `💧 水泵运行中 · ${remaining}s`;
+    return;
+  }
+
+  if(d.state === "soaking"){
+    const remaining = Math.max(0, Number(d.intervalRemaining || 0) - age);
+    ui.liveStrip.className = "live-strip soaking";
+    ui.liveStrip.textContent = `正在渗透 · 约 ${remaining}s 后复测土壤湿度`;
+    ui.heroHint.textContent = `渗透复测倒计时 · ${remaining}s`;
+    return;
+  }
+
+  if(d.vpdAssistReady){
+    ui.liveStrip.className = "live-strip assist";
+    ui.liveStrip.textContent = `VPD辅助已就绪 · 土壤 ${moistureText}${vpdText} · ${age}s前`;
+    ui.heroHint.textContent = "VPD持续偏高 · 环境辅助已就绪";
+    return;
+  }
+
+  ui.liveStrip.className = "live-strip monitoring";
+  if(d.auto){
+    ui.liveStrip.textContent = `自动监测中 · 土壤 ${moistureText}${vpdText} · ${age}s前`;
+    ui.heroHint.textContent = "自动浇水已开启 · 实时监测中";
+  }else{
+    ui.liveStrip.textContent = `实时监测 · 土壤 ${moistureText}${vpdText} · ${age}s前`;
+    ui.heroHint.textContent = "设备状态已同步到 Worker";
+  }
 }
 
 function updateControls(){
@@ -150,12 +249,21 @@ function updateControls(){
 async function loadEvents(){
   try{
     const result = await api("/api/watering-events?days=7&limit=30");
-    const events = result.events || [];
-    ui.eventCount.textContent = String(events.length);
-    ui.eventList.innerHTML = events.length ? events.map(eventHtml).join("") : '<div class="empty">暂无浇水事件</div>';
+    eventsCache = Array.isArray(result.events) ? result.events : [];
+    renderEvents();
   }catch(error){
     ui.eventList.innerHTML = `<div class="empty">事件读取失败：${escapeHtml(error.message)}</div>`;
   }
+}
+
+function renderEvents(){
+  const events = [...eventsCache]
+    .sort((a,b)=>Number(b.updated_at || b.started_at || 0)-Number(a.updated_at || a.started_at || 0))
+    .slice(0,30);
+  ui.eventCount.textContent = String(events.length);
+  ui.eventList.innerHTML = events.length
+    ? events.map(eventHtml).join("")
+    : '<div class="empty">暂无浇水事件</div>';
 }
 
 function eventHtml(e){
@@ -191,6 +299,7 @@ async function loadHistory(){
       watering: Array.isArray(result.watering) ? result.watering : [],
       weatherMeta: result.weatherMeta || null,
     };
+    historyCursorMs = computeHistoryCursorMs();
     renderTrend();
   }catch(error){
     trendModel = null;
@@ -200,6 +309,92 @@ async function loadHistory(){
     ui.trendMeta.textContent = "趋势读取失败不会影响实时状态和远程控制。";
   }finally{
     ui.trendRefreshBtn.disabled = false;
+  }
+}
+
+function computeHistoryCursorMs(){
+  let cursor = 0;
+  for(const row of history.soil || []) cursor = Math.max(cursor, toMillis(row.ts));
+  for(const row of history.weather || []) cursor = Math.max(cursor, toMillis(row.ts));
+  for(const row of history.watering || []) cursor = Math.max(cursor, toMillis(row.updated_at || row.started_at));
+  return cursor || Math.max(0, Date.now() - 120000);
+}
+
+function mergeRows(existing, incoming, keyFn, sortFn){
+  const map = new Map();
+  for(const row of existing || []) map.set(keyFn(row), row);
+  for(const row of incoming || []){
+    const key = keyFn(row);
+    map.set(key, {...(map.get(key) || {}), ...row});
+  }
+  return [...map.values()].sort(sortFn);
+}
+
+function pruneHistory(){
+  const cutoffMs = Date.now() - 7 * 86400 * 1000;
+  const cutoffSec = Math.floor(cutoffMs / 1000);
+  history.soil = history.soil.filter(r=>toMillis(r.ts) >= cutoffMs);
+  history.weather = history.weather.filter(r=>toMillis(r.ts) >= cutoffMs);
+  history.watering = history.watering.filter(r=>Number(r.updated_at || r.started_at || 0) >= cutoffSec);
+  eventsCache = eventsCache.filter(r=>Number(r.updated_at || r.started_at || 0) >= cutoffSec);
+}
+
+async function loadHistoryDelta(){
+  if(deltaRequestInFlight || !historyCursorMs || document.hidden) return;
+  deltaRequestInFlight = true;
+
+  try{
+    const since = Math.max(0, historyCursorMs - 1000);
+    const result = await api(`/api/history/delta?since=${since}&soilLimit=240&weatherLimit=64&wateringLimit=40`);
+
+    const soilDelta = Array.isArray(result.soil) ? result.soil : [];
+    const weatherDelta = Array.isArray(result.weather) ? result.weather : [];
+    const wateringDelta = Array.isArray(result.watering) ? result.watering : [];
+
+    if(soilDelta.length){
+      history.soil = mergeRows(
+        history.soil,
+        soilDelta,
+        r=>`${r.device_id || "niuniu-main"}:${r.ts}`,
+        (a,b)=>toMillis(a.ts)-toMillis(b.ts)
+      );
+    }
+
+    if(weatherDelta.length){
+      history.weather = mergeRows(
+        history.weather,
+        weatherDelta,
+        r=>String(r.ts),
+        (a,b)=>toMillis(a.ts)-toMillis(b.ts)
+      );
+    }
+
+    if(wateringDelta.length){
+      history.watering = mergeRows(
+        history.watering,
+        wateringDelta,
+        r=>String(r.event_id || `${r.started_at}:${r.source}`),
+        (a,b)=>Number(a.updated_at || a.started_at || 0)-Number(b.updated_at || b.started_at || 0)
+      );
+
+      eventsCache = mergeRows(
+        eventsCache,
+        wateringDelta,
+        r=>String(r.event_id || `${r.started_at}:${r.source}`),
+        (a,b)=>Number(b.updated_at || b.started_at || 0)-Number(a.updated_at || a.started_at || 0)
+      );
+      renderEvents();
+    }
+
+    if(soilDelta.length || weatherDelta.length || wateringDelta.length){
+      pruneHistory();
+      historyCursorMs = Math.max(historyCursorMs, computeHistoryCursorMs());
+      renderTrend();
+    }
+  }catch(error){
+    console.warn("delta refresh failed", error);
+  }finally{
+    deltaRequestInFlight = false;
   }
 }
 
@@ -214,10 +409,20 @@ function renderTrend(){
   const effectiveHours = (viewEnd - viewStart) / 3600000;
   const weatherInfo = weatherFreshness(dataNow);
 
-  const soil = history.soil
+  let soil = history.soil
     .map(r => ({t:toMillis(r.ts), v:Number(r.moisture), valid:Boolean(r.sensor_valid)}))
     .filter(r => r.t >= viewStart && r.t <= viewEnd && Number.isFinite(r.v) && r.valid)
     .sort((a,b)=>a.t-b.t);
+
+  const liveSoilTs = toMillis(status?.timestamp || 0);
+  const liveSoilValue = Number(status?.moisture);
+  if(status?.sensorValid &&
+     Number.isFinite(liveSoilValue) &&
+     liveSoilTs >= viewStart &&
+     liveSoilTs <= viewEnd &&
+     (!soil.length || liveSoilTs > soil[soil.length-1].t)){
+    soil = [...soil,{t:liveSoilTs,v:liveSoilValue,valid:true,live:true}];
+  }
 
   const weatherRows = history.weather
     .map(r => ({
@@ -667,7 +872,7 @@ async function sendCommand(command){
     await new Promise(r=>setTimeout(r,700));
     await Promise.all([loadStatus(), loadEvents()]);
     if(command === "water" || command === "stop"){
-      setTimeout(loadHistory, 1500);
+      setTimeout(loadHistoryDelta, 1500);
     }
   }catch(error){
     if(error.status === 403){
@@ -802,20 +1007,43 @@ async function refreshAll(){
 }
 
 let statusTimer = null;
-let eventsTimer = null;
+let deltaTimer = null;
+let localTicker = null;
 
 function stopPolling(){
-  if(statusTimer) clearInterval(statusTimer);
-  if(eventsTimer) clearInterval(eventsTimer);
+  if(statusTimer) clearTimeout(statusTimer);
+  if(deltaTimer) clearInterval(deltaTimer);
+  if(localTicker) clearInterval(localTicker);
   statusTimer = null;
-  eventsTimer = null;
+  deltaTimer = null;
+  localTicker = null;
+}
+
+function statusPollDelay(){
+  return status?.state === "pumping" || status?.state === "soaking"
+    ? 5000
+    : 10000;
+}
+
+function scheduleStatusPoll(delay = statusPollDelay()){
+  if(document.hidden) return;
+  if(statusTimer) clearTimeout(statusTimer);
+
+  statusTimer = setTimeout(async ()=>{
+    if(document.hidden) return;
+    await loadStatus();
+    scheduleStatusPoll(statusPollDelay());
+  }, delay);
 }
 
 function startPolling(){
   stopPolling();
   if(document.hidden) return;
-  statusTimer = setInterval(loadStatus, 15000);
-  eventsTimer = setInterval(loadEvents, 300000);
+
+  renderRealtimeTick();
+  localTicker = setInterval(renderRealtimeTick, 1000);
+  deltaTimer = setInterval(loadHistoryDelta, 30000);
+  scheduleStatusPoll(statusPollDelay());
 }
 
 document.addEventListener("visibilitychange", async ()=>{
@@ -823,9 +1051,12 @@ document.addEventListener("visibilitychange", async ()=>{
     stopPolling();
     return;
   }
+
   await refreshAll();
+  await loadHistoryDelta();
   startPolling();
 });
 
 await Promise.all([refreshAll(), loadHistory()]);
+renderRealtimeTick();
 startPolling();
