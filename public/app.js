@@ -10,6 +10,12 @@ const ui = {
   trendEmpty: $("trendEmpty"), trendMeta: $("trendMeta"), trendRefreshBtn: $("trendRefreshBtn"),
   trendTitle: $("trendTitle"), zoomOutBtn: $("zoomOutBtn"), zoomInBtn: $("zoomInBtn"), zoomResetBtn: $("zoomResetBtn"),
   liveStrip: $("liveStrip"),
+  hardwareLiveBadge: $("hardwareLiveBadge"),
+  hwEsp32: $("hwEsp32"), hwEsp32Detail: $("hwEsp32Detail"),
+  hwSensor: $("hwSensor"), hwSensorDetail: $("hwSensorDetail"),
+  hwMosfet: $("hwMosfet"), hwMosfetDetail: $("hwMosfetDetail"),
+  hwPump: $("hwPump"), hwPumpDetail: $("hwPumpDetail"),
+  hwPower: $("hwPower"), hwWaterPath: $("hwWaterPath"),
 };
 
 let health = null;
@@ -113,6 +119,7 @@ function renderStatus(result){
     ui.daily.textContent = "--/3";
     ui.auto.textContent = "--";
     ui.heroHint.textContent = "等待设备数据进入 Worker";
+    renderHardwareStatus(null, result);
     updateControls();
     return;
   }
@@ -148,6 +155,7 @@ function renderStatus(result){
   ui.autoBtn.textContent = d.auto ? "关闭自动" : "开启自动";
   updateControls();
   renderRealtimeTick();
+  renderHardwareStatus(d, result);
 
   if(trendModel) renderTrend();
 }
@@ -178,6 +186,7 @@ function renderRealtimeTick(){
   if(!ui.liveStrip) return;
 
   const d = status;
+  if(d) renderHardwareStatus(d, latestStatusResult);
   if(!d){
     ui.liveStrip.className = "live-strip syncing";
     ui.liveStrip.textContent = "正在同步实时状态…";
@@ -230,6 +239,73 @@ function renderRealtimeTick(){
     ui.liveStrip.textContent = `实时监测 · 土壤 ${moistureText}${vpdText} · ${age}s前`;
     ui.heroHint.textContent = "设备状态已同步到 Worker";
   }
+}
+
+function setHardwareState(el, text, stateClass){
+  if(!el) return;
+  el.className = `hardware-state ${stateClass}`;
+  const label = el.querySelector("span");
+  if(label) label.textContent = text;
+}
+
+function renderHardwareStatus(d, result = latestStatusResult){
+  const stale = Boolean(result?.stale) || currentStatusAgeSeconds() > 90;
+  const online = Boolean(d?.online) && !stale;
+
+  if(ui.hardwareLiveBadge){
+    ui.hardwareLiveBadge.className = `hardware-live-badge ${online ? "online" : "offline"}`;
+    ui.hardwareLiveBadge.textContent = online ? "实时同步" : "设备离线";
+  }
+
+  if(!d || !online){
+    setHardwareState(ui.hwEsp32, "离线", "error");
+    setHardwareState(ui.hwSensor, "无法确认", "error");
+    setHardwareState(ui.hwMosfet, "无法确认", "error");
+    setHardwareState(ui.hwPump, "无法确认", "error");
+    if(ui.hwEsp32Detail) ui.hwEsp32Detail.textContent = stale ? "状态数据已过期" : "等待设备连接";
+    if(ui.hwSensorDetail) ui.hwSensorDetail.textContent = "无实时传感器数据";
+    if(ui.hwMosfetDetail) ui.hwMosfetDetail.textContent = "无实时GPIO状态";
+    if(ui.hwPumpDetail) ui.hwPumpDetail.textContent = "无实时控制状态";
+    return;
+  }
+
+  setHardwareState(ui.hwEsp32, "在线", "ok");
+  if(ui.hwEsp32Detail){
+    const age = currentStatusAgeSeconds();
+    ui.hwEsp32Detail.textContent = `最近上报 ${age}s 前`;
+  }
+
+  if(d.sensorValid){
+    setHardwareState(ui.hwSensor, "正常", "ok");
+    if(ui.hwSensorDetail){
+      ui.hwSensorDetail.textContent = `土壤 ${d.moisture ?? "--"}% · RAW ${d.raw ?? "--"}`;
+    }
+  }else{
+    setHardwareState(ui.hwSensor, "异常", "warn");
+    if(ui.hwSensorDetail) ui.hwSensorDetail.textContent = "传感器数据无效";
+  }
+
+  const driving = Boolean(d.pump) || d.state === "pumping";
+  setHardwareState(ui.hwMosfet, driving ? "驱动中" : "待机", driving ? "active" : "ok");
+  if(ui.hwMosfetDetail){
+    ui.hwMosfetDetail.textContent = driving ? "GPIO 控制输出为 ON" : "GPIO 控制输出为 OFF";
+  }
+
+  if(d.state === "pump_fault"){
+    setHardwareState(ui.hwPump, "故障", "error");
+    if(ui.hwPumpDetail) ui.hwPumpDetail.textContent = "控制系统报告水泵故障";
+  }else{
+    setHardwareState(ui.hwPump, driving ? "运行指令" : "待机", driving ? "active" : "ok");
+    if(ui.hwPumpDetail){
+      ui.hwPumpDetail.textContent = driving
+        ? "已下发运行指令 · 无流量反馈"
+        : "未下发运行指令 · 无流量反馈";
+    }
+  }
+
+  // These two components have no independent telemetry yet.
+  setHardwareState(ui.hwPower, "未独立监测", "unmonitored");
+  setHardwareState(ui.hwWaterPath, "未独立监测", "unmonitored");
 }
 
 function updateControls(){
