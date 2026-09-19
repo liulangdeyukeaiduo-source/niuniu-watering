@@ -58,7 +58,7 @@ button:disabled{opacity:.42;cursor:not-allowed}
 .event-status{font-size:10px;padding:4px 7px;border-radius:999px;background:var(--gray);height:fit-content;white-space:nowrap}
 .empty{padding:16px 0 8px;text-align:center;font-size:11px;color:var(--muted)}
 
-/* 7-day trend */
+/* trend */
 .trend-head{align-items:flex-start}
 .trend-toolbar{margin-top:10px;display:flex;gap:6px}
 .range-btn{height:30px;padding:0 10px;border-radius:9px;background:#f1f3f0;color:#667068;font-size:11px;font-weight:700}
@@ -69,24 +69,100 @@ button:disabled{opacity:.42;cursor:not-allowed}
 .legend-line.soil{background:#4f8a55}
 .legend-line.humidity{background:#5d8fa3}
 .legend-line.temp{background:#c58d42}
-.legend-dot{display:inline-block;width:7px;height:7px;border-radius:50%}
-.legend-dot.watering{background:#5f6f63}
-.trend-box{position:relative;margin-top:7px;border:1px solid #edf1ec;border-radius:13px;background:#fbfcfa;overflow:hidden}
-.trend-svg{display:block;width:100%;height:auto;min-height:210px}
+.legend-band{display:inline-block;width:17px;height:8px;border-radius:2px;background:repeating-linear-gradient(135deg,rgba(91,111,98,.16) 0 4px,rgba(91,111,98,.36) 4px 7px)}
+.trend-box{position:relative;margin-top:7px;border:1px solid #edf1ec;border-radius:13px;background:#fbfcfa;overflow:hidden;transition:box-shadow .25s ease,border-color .25s ease}
+.trend-svg{display:block;width:100%;height:auto;min-height:210px;touch-action:pan-y}
 .trend-empty{position:absolute;inset:0;display:grid;place-items:center;padding:20px;text-align:center;font-size:11px;color:var(--muted);background:rgba(251,252,250,.9)}
 .trend-meta{margin-top:6px;font-size:9.5px;line-height:1.45;color:#969e97}
 .grid-line{stroke:#e8ece8;stroke-width:1}
 .axis-tick{stroke:#b9c2ba;stroke-width:1}
 .axis-label,.x-label,.axis-unit{font-size:9px;fill:#8b948d;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
 .axis-unit{font-size:8px}
-.series{fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.series{fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
 .series.soil{stroke:#4f8a55}
 .series.humidity{stroke:#5d8fa3}
 .series.temp{stroke:#c58d42}
-.watering-marker{stroke-width:1.15;opacity:.72}
-line.watering-marker{stroke-dasharray:3 4}
-.watering-marker.auto{stroke:#94773c;fill:#94773c}
-.watering-marker.manual{stroke:#596d61;fill:#596d61}
+.watering-band{stroke-width:.8;opacity:.98;pointer-events:none}
+.watering-band.auto{stroke:rgba(78,130,72,.65)}
+.watering-band.manual{stroke:rgba(75,94,82,.65)}
+.watering-drop{font-size:10px;pointer-events:none}
+.trend-hit{pointer-events:all;cursor:crosshair}
+.hover-line{stroke:#59675d;stroke-width:1;stroke-dasharray:3 3;opacity:.78;pointer-events:none}
+.hover-point{stroke:#fff;stroke-width:1.5;pointer-events:none}
+.hover-point.soil{fill:#4f8a55}
+.hover-point.humidity{fill:#5d8fa3}
+.hover-point.temp{fill:#c58d42}
+.hidden-svg{display:none}
+.trend-tooltip{position:absolute;z-index:8;min-width:160px;max-width:205px;padding:9px 10px;border-radius:11px;background:rgba(31,43,34,.94);color:#fff;box-shadow:0 8px 24px rgba(38,55,42,.18);font-size:11px;line-height:1.4;pointer-events:none;transform:translateX(12px)}
+.trend-tooltip.flip{transform:translateX(calc(-100% - 12px))}
+.tip-time{font-size:10px;color:rgba(255,255,255,.72);margin-bottom:5px;white-space:nowrap}
+.tip-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:3px 0}
+.tip-row span{display:inline-flex;align-items:center;gap:6px}
+.tip-row b{font-size:12px}
+.tip-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+.tip-dot.soil{background:#74b17a}
+.tip-dot.humidity{background:#78afc2}
+.tip-dot.temp{background:#d5a45f}
+.tip-watering{margin-top:7px;padding-top:7px;border-top:1px solid rgba(255,255,255,.18);font-weight:700}
+.tip-watering span{font-size:10px;color:rgba(255,255,255,.72);font-weight:500}
+
+/* Real-time watering emphasis */
+body.watering-active .hero,
+body.watering-active .controls{
+  border-color:rgba(75,139,82,.46);
+  box-shadow:0 0 0 2px rgba(92,159,98,.10),0 10px 28px rgba(75,139,82,.10)
+}
+body.watering-active .trend-box{
+  border-color:rgba(75,139,82,.58);
+  animation:wateringPulse 1.35s ease-in-out infinite;
+}
+body.watering-active .state-grid,
+body.watering-active .hero-hint{color:#2e6b36}
+@keyframes wateringPulse{
+  0%,100%{box-shadow:inset 0 0 0 2px rgba(86,148,91,.16),0 0 0 0 rgba(86,148,91,.04)}
+  50%{box-shadow:inset 0 0 0 3px rgba(86,148,91,.30),0 0 0 6px rgba(86,148,91,.06)}
+}
+
+/* Desktop: use the screen instead of centering a phone-sized column */
+@media(min-width:768px){
+  .app{
+    width:min(1120px,calc(100% - 32px));
+    margin:0 auto;
+    padding:18px 0 24px;
+    display:grid;
+    grid-template-columns:360px minmax(0,1fr);
+    grid-template-areas:
+      "hero trend"
+      "status trend"
+      "controls trend"
+      "events trend";
+    gap:12px;
+    align-items:start;
+  }
+  .hero{grid-area:hero;padding:18px}
+  .status-grid{grid-area:status}
+  .controls{grid-area:controls}
+  .trend{grid-area:trend;padding:16px}
+  .events{grid-area:events}
+  .trend-svg{min-height:390px}
+  .trend .section-title{font-size:15px}
+  .trend .section-sub{font-size:12px}
+  .legend{font-size:11px;gap:9px 16px}
+  .trend-toolbar{margin-top:14px}
+  .trend-box{margin-top:10px}
+  .trend-tooltip{font-size:12px;min-width:176px;max-width:220px}
+  .event-list{max-height:310px;overflow:auto;padding-right:2px}
+}
+
+@media(min-width:1100px){
+  .app{grid-template-columns:390px minmax(0,1fr)}
+  .trend-svg{min-height:420px}
+  .moisture{font-size:64px}
+}
+
+@media(max-width:767px){
+  .app{display:flex;width:min(560px,100%)}
+}
 
 @media(max-width:380px){
   .app{padding-left:8px;padding-right:8px}
@@ -96,4 +172,5 @@ line.watering-marker{stroke-dasharray:3 4}
   .hero{padding:13px}
   .trend-svg{min-height:190px}
   .legend{gap:6px 9px}
+  .trend-tooltip{min-width:150px;max-width:185px;font-size:10.5px}
 }
