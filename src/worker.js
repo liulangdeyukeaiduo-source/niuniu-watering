@@ -26,7 +26,7 @@ export default {
           webhookConfigured: Boolean(env.EMQX_WEBHOOK_TOKEN),
           accessAuthenticated: hasAccessIdentity(request),
           commandProtected: env.REQUIRE_ACCESS !== "true" || hasAccessIdentity(request),
-          build: "2026-09-18-d1-read-opt-1",
+          build: "2026-09-19-fallback-ts-fix-1",
           ts: Math.floor(Date.now() / 1000),
         });
       }
@@ -137,7 +137,8 @@ async function getStatus(env) {
     return json({ ok: true, source: "none", stale: true, data: null });
   }
 
-  const ageSeconds = Math.max(0, Math.floor(Date.now() / 1000) - Number(fallback.ts || 0));
+  const fallbackTs = normalizeTimestamp(fallback.ts) || 0;
+  const ageSeconds = Math.max(0, Math.floor(Date.now() / 1000) - fallbackTs);
   return json({
     ok: true,
     source: "soil_history_fallback",
@@ -145,7 +146,7 @@ async function getStatus(env) {
     stale: true,
     data: {
       deviceId: fallback.device_id,
-      timestamp: fallback.ts,
+      timestamp: fallbackTs,
       moisture: fallback.moisture,
       raw: fallback.raw,
       sensorValid: Boolean(fallback.sensor_valid),
