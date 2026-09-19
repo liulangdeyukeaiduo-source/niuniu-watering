@@ -26,7 +26,7 @@ export default {
           webhookConfigured: Boolean(env.EMQX_WEBHOOK_TOKEN),
           accessAuthenticated: hasAccessIdentity(request),
           commandProtected: env.REQUIRE_ACCESS !== "true" || hasAccessIdentity(request),
-          build: "2026-09-19-fallback-ts-fix-1",
+          build: "2026-09-19-esp32-v3-global-1",
           ts: Math.floor(Date.now() / 1000),
         });
       }
@@ -185,60 +185,46 @@ async function getWateringEvents(url, env) {
 
 async function getHistory(url, env) {
   const days = clampInt(url.searchParams.get("days"), 1, 30, 7);
-  const since = Math.floor(Date.now() / 1000) - days * 86400;
+  const sinceSeconds = Math.floor(Date.now() / 1000) - days * 86400;
+  const sinceMillis = sinceSeconds * 1000;
 
-  // Keep D1 read cost bounded even before timestamp indexes are applied.
-  // soil_history/weather_history both use INTEGER PRIMARY KEY AUTOINCREMENT id,
-  // so reading the latest N rows by id avoids repeated full-table scans.
-  const soilReadCap = clampInt(url.searchParams.get("soilLimit"), 100, 3000, 2000);
-  const weatherReadCap = clampInt(url.searchParams.get("weatherLimit"), 100, 3000, 2000);
-  const wateringReadCap = clampInt(url.searchParams.get("wateringLimit"), 20, 500, 200);
+  const soilLimit = clampInt(url.searchParams.get("soilLimit"), 100, 15000, 12000);
+  const weatherLimit = clampInt(url.searchParams.get("weatherLimit"), 100, 15000, 12000);
+  const wateringLimit = clampInt(url.searchParams.get("wateringLimit"), 20, 500, 200);
 
   const [soilResult, weatherResult, wateringResult] = await Promise.all([
     env.DB.prepare(
       `SELECT ts, device_id, moisture, raw, sensor_valid, state, pump, auto_mode
        FROM soil_history
-       ORDER BY id DESC
-       LIMIT ?1`
-    ).bind(soilReadCap).all(),
+       WHERE device_id = ?1 AND ts >= ?2
+       ORDER BY ts ASC
+       LIMIT ?3`
+    ).bind("niuniu-main", sinceMillis, soilLimit).all(),
     env.DB.prepare(
       `SELECT ts, temperature_c, humidity_pct, location, source
        FROM weather_history
-       ORDER BY id DESC
-       LIMIT ?1`
-    ).bind(weatherReadCap).all(),
+       WHERE ts >= ?1
+       ORDER BY ts ASC
+       LIMIT ?2`
+    ).bind(sinceMillis, weatherLimit).all(),
     env.DB.prepare(
       `SELECT event_id, source, started_at, stopped_at, verified_at,
               planned_seconds, actual_seconds, before_moisture, after_moisture,
               result, last_phase, test, updated_at
        FROM watering_events
-       ORDER BY updated_at DESC
-       LIMIT ?1`
-    ).bind(wateringReadCap).all(),
+       WHERE updated_at >= ?1
+       ORDER BY updated_at ASC
+       LIMIT ?2`
+    ).bind(sinceSeconds, wateringLimit).all(),
   ]);
-
-  const soil = (soilResult.results || [])
-    .filter((row) => Number(row.ts || 0) >= since)
-    .reverse();
-  const weather = (weatherResult.results || [])
-    .filter((row) => Number(row.ts || 0) >= since)
-    .reverse();
-  const watering = (wateringResult.results || [])
-    .filter((row) => Number(row.updated_at || row.started_at || 0) >= since)
-    .reverse();
 
   return json({
     ok: true,
     days,
-    boundedReads: true,
-    readCaps: {
-      soil: soilReadCap,
-      weather: weatherReadCap,
-      watering: wateringReadCap,
-    },
-    soil,
-    weather,
-    watering,
+    indexedReads: true,
+    soil: soilResult.results || [],
+    weather: weatherResult.results || [],
+    watering: wateringResult.results || [],
   });
 }
 
@@ -352,7 +338,15 @@ async function ingestEmqx(request, env) {
 
   if (topic === "niuniu/status" || looksLikeStatus(payload)) {
     await upsertDeviceState(payload, env);
-    return json({ ok: true, type: "status", deviceId: payload.deviceId || "niuniu-main" });
+    if (boolInt(payload.historySample) === 1 && boolInt(payload.sensorValid) === 1) {
+      await appendSoilHistory(payload, env);
+    }
+    return json({
+      ok: true,
+      type: "status",
+      deviceId: payload.deviceId || "niuniu-main",
+      historyStored: boolInt(payload.historySample) === 1 && boolInt(payload.sensorValid) === 1,
+    });
   }
 
   if (topic === "niuniu/watering/event" || payload.eventId) {
@@ -435,6 +429,27 @@ async function upsertDeviceState(payload, env) {
     nullableText(payload.ip),
     boolInt(payload.test),
     JSON.stringify(payload)
+  ).run();
+}
+
+async function appendSoilHistory(payload, env) {
+  const tsSeconds = normalizeTimestamp(payload.timestamp) || Math.floor(Date.now() / 1000);
+  const tsMillis = tsSeconds * 1000;
+  const deviceId = String(payload.deviceId || "niuniu-main");
+
+  await env.DB.prepare(
+    `INSERT INTO soil_history
+      (device_id, ts, moisture, raw, sensor_valid, state, pump, auto_mode)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
+  ).bind(
+    deviceId,
+    tsMillis,
+    nullableInt(payload.moisture),
+    nullableInt(payload.raw),
+    boolInt(payload.sensorValid),
+    nullableText(payload.state),
+    boolInt(payload.pump),
+    boolInt(payload.auto)
   ).run();
 }
 
