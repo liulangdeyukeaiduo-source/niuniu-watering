@@ -431,7 +431,7 @@ function resetTrendView(){
   renderTrend();
 }
 
-function weatherFreshnessfunction weatherFreshness(now = Date.now()){
+function weatherFreshness(now = Date.now()){
   const times = history.weather
     .map(row => toMillis(row.ts))
     .filter(Number.isFinite);
