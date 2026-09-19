@@ -74,6 +74,37 @@ button:disabled{opacity:.42;cursor:not-allowed}
 .event-status{font-size:10px;padding:4px 7px;border-radius:999px;background:var(--gray);height:fit-content;white-space:nowrap}
 .empty{padding:16px 0 8px;text-align:center;font-size:11px;color:var(--muted)}
 
+/* hardware overview */
+.hardware{padding:12px}
+.hardware-head{align-items:flex-start}
+.hardware-live-badge{height:27px;padding:0 9px;border-radius:999px;background:#eef2ee;color:#657067;font-size:10px;font-weight:750;display:inline-flex;align-items:center;white-space:nowrap}
+.hardware-live-badge.online{background:#e2f2e4;color:#2b6e35}
+.hardware-live-badge.offline{background:#f5e4e1;color:#995347}
+.hardware-layout{margin-top:10px;display:grid;gap:10px}
+.hardware-figure{margin:0;min-width:0}
+.hardware-image-wrap{position:relative;border:1px solid #e7ece6;border-radius:15px;overflow:hidden;background:#fafcf9}
+.hardware-image-wrap img{display:block;width:100%;height:auto;aspect-ratio:4/3;object-fit:cover}
+.hardware-image-tag{position:absolute;z-index:2;top:8px;left:8px;padding:5px 8px;border-radius:999px;background:rgba(255,255,255,.88);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);box-shadow:0 2px 9px rgba(43,61,47,.08);font-size:9px;font-weight:750;color:#5d695f}
+.hardware-figure figcaption{margin-top:6px;font-size:9px;line-height:1.5;color:#969e97}
+.hardware-status-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.hardware-item{min-width:0;padding:10px;border:1px solid #e8ece7;border-radius:13px;background:#fafbf9}
+.hardware-item-name{font-size:10.5px;font-weight:750;color:#465149;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hardware-state{margin-top:6px;display:inline-flex;align-items:center;gap:5px;max-width:100%;font-size:11px;font-weight:800;color:#5e6961}
+.hardware-state i{width:7px;height:7px;flex:0 0 auto;border-radius:50%;background:#9da59f}
+.hardware-state span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hardware-state.ok{color:#31723c}
+.hardware-state.ok i{background:#58a663;box-shadow:0 0 0 3px rgba(88,166,99,.10)}
+.hardware-state.active{color:#31723c}
+.hardware-state.active i{background:#43a85d;animation:hardwarePulse 1s ease-out infinite}
+.hardware-state.warn{color:#8b6b28}
+.hardware-state.warn i{background:#d8a445}
+.hardware-state.error{color:#9a4d43}
+.hardware-state.error i{background:#c86558}
+.hardware-state.unmonitored{color:#858d87}
+.hardware-state.unmonitored i{background:#aeb5b0}
+.hardware-detail{margin-top:3px;font-size:9px;line-height:1.35;color:#9aa19b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@keyframes hardwarePulse{0%{box-shadow:0 0 0 0 rgba(67,168,93,.28)}70%{box-shadow:0 0 0 6px rgba(67,168,93,0)}100%{box-shadow:0 0 0 0 rgba(67,168,93,0)}}
+
 /* trend */
 .trend-head{align-items:flex-start}
 .trend-toolbar{margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
@@ -164,7 +195,8 @@ body.watering-active .hero-hint{color:#376d42}
       "hero trend"
       "status trend"
       "controls trend"
-      "events trend";
+      "events trend"
+      "hardware hardware";
     gap:12px;
     align-items:start;
   }
@@ -173,6 +205,13 @@ body.watering-active .hero-hint{color:#376d42}
   .controls{grid-area:controls}
   .trend{grid-area:trend;padding:16px}
   .events{grid-area:events}
+  .hardware{grid-area:hardware;padding:16px}
+  .hardware-layout{grid-template-columns:minmax(0,1.25fr) minmax(340px,.75fr);gap:14px;align-items:start}
+  .hardware-status-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  .hardware-item{padding:12px}
+  .hardware-item-name{font-size:11.5px}
+  .hardware-state{font-size:12px}
+  .hardware-detail{font-size:9.5px}
   .trend-svg{min-height:470px}
   .trend .section-title{font-size:15px}
   .trend .section-sub{font-size:12px}
@@ -192,6 +231,9 @@ body.watering-active .hero-hint{color:#376d42}
 @media(max-width:767px){
   .app{display:flex;width:100%;max-width:560px;overflow-x:hidden}
   .trend{min-width:0;overflow:hidden}
+  .hardware{min-width:0;overflow:hidden}
+  .hardware-image-wrap{border-radius:13px}
+  .hardware-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .trend-head{gap:8px}
   .trend-head>div{min-width:0}
   .trend-toolbar{display:flex;flex-direction:column;align-items:stretch;gap:7px}
