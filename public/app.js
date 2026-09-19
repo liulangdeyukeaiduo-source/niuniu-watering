@@ -113,7 +113,7 @@ function renderStatus(result){
   if(result.ageSeconds !== undefined) items.push(`数据 ${result.ageSeconds}s 前`);
   if(result.source) items.push(result.source);
   ui.meta.textContent = items.join(" ｜ ");
-  ui.resetBtn.classList.toggle("hidden", !d.test);
+  ui.resetBtn.classList.remove("hidden");
   ui.autoBtn.textContent = d.auto ? "关闭自动" : "开启自动";
   updateControls();
 
@@ -132,7 +132,7 @@ function updateControls(){
   ui.stopBtn.disabled = !permitted || !deviceUsable;
   ui.autoBtn.disabled = !permitted || !deviceUsable;
   ui.statusBtn.disabled = !permitted;
-  ui.resetBtn.disabled = !permitted || !deviceUsable;
+  ui.resetBtn.disabled = !permitted || !deviceUsable || blocking;
 }
 
 async function loadEvents(){
@@ -237,14 +237,20 @@ function renderTrend(){
   appendSvg("defs",{}, "");
   const defs = ui.trendSvg.querySelector("defs");
   defs.innerHTML = `
-    <pattern id="wateringAutoPattern" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
-      <rect width="8" height="8" fill="rgba(104,151,95,.16)"></rect>
-      <rect width="3" height="8" fill="rgba(104,151,95,.30)"></rect>
-    </pattern>
-    <pattern id="wateringManualPattern" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
-      <rect width="8" height="8" fill="rgba(92,112,99,.15)"></rect>
-      <rect width="3" height="8" fill="rgba(92,112,99,.30)"></rect>
-    </pattern>
+    <linearGradient id="wateringAutoGlow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#7ab987" stop-opacity="0"></stop>
+      <stop offset="28%" stop-color="#7ab987" stop-opacity=".08"></stop>
+      <stop offset="50%" stop-color="#6fab7b" stop-opacity=".24"></stop>
+      <stop offset="72%" stop-color="#7ab987" stop-opacity=".08"></stop>
+      <stop offset="100%" stop-color="#7ab987" stop-opacity="0"></stop>
+    </linearGradient>
+    <linearGradient id="wateringManualGlow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#79a8b4" stop-opacity="0"></stop>
+      <stop offset="28%" stop-color="#79a8b4" stop-opacity=".07"></stop>
+      <stop offset="50%" stop-color="#6d9eaa" stop-opacity=".22"></stop>
+      <stop offset="72%" stop-color="#79a8b4" stop-opacity=".07"></stop>
+      <stop offset="100%" stop-color="#79a8b4" stop-opacity="0"></stop>
+    </linearGradient>
   `;
 
   for(const pct of [0,25,50,75,100]){
@@ -277,11 +283,33 @@ function renderTrend(){
     let bandW = Math.max(realEndX - realStartX, minimumWidth);
     if(bandX + bandW > W-m.r) bandW = Math.max(3, W-m.r-bandX);
 
-    const cls = e.source === "AUTO" ? "watering-band auto" : "watering-band manual";
-    const fill = e.source === "AUTO" ? "url(#wateringAutoPattern)" : "url(#wateringManualPattern)";
-    const rect = appendSvg("rect",{x:bandX,y:m.t,width:bandW,height:ph,class:cls,fill,rx:2});
-    rect.setAttribute("aria-label", `${sourceText(e.source)} ${timeText(e.start/1000)}`);
-    appendSvg("text",{x:bandX+Math.min(bandW/2,8),y:m.t+13,class:"watering-drop","text-anchor":"middle"},"💧");
+    const kind = e.source === "AUTO" ? "auto" : "manual";
+    const fill = e.source === "AUTO" ? "url(#wateringAutoGlow)" : "url(#wateringManualGlow)";
+    const centerX = bandX + bandW / 2;
+
+    const halo = appendSvg("rect",{
+      x:bandX,
+      y:m.t,
+      width:bandW,
+      height:ph,
+      class:`watering-halo ${kind}`,
+      fill,
+      rx:Math.min(7, bandW/2)
+    });
+    halo.setAttribute("aria-label", `${sourceText(e.source)} ${timeText(e.start/1000)}`);
+
+    appendSvg("line",{
+      x1:centerX,y1:m.t+8,x2:centerX,y2:H-m.b-3,
+      class:`watering-focus-line ${kind}`
+    });
+    appendSvg("circle",{
+      cx:centerX,cy:m.t+7,r:4.2,
+      class:`watering-dot ${kind}`
+    });
+    appendSvg("circle",{
+      cx:centerX-1.2,cy:m.t+5.8,r:1.1,
+      class:"watering-dot-highlight"
+    });
 
     wateringBands.push({...e, x1:bandX, x2:bandX+bandW});
   });
@@ -309,7 +337,7 @@ function renderTrend(){
   if(humidity.length || temp.length) shown.push(`天气 ${Math.max(humidity.length,temp.length)}`);
   if(watering.length) shown.push(`浇水 ${watering.length}`);
 
-  ui.trendMeta.textContent = `${trendHours===168?"7天":trendHours===72?"3天":"24小时"}窗口 ｜ ${shown.join(" · ") || "暂无数据"} ｜ 悬浮/轻触查看时点数据；阴影带表示真实浇水时段`;
+  ui.trendMeta.textContent = `${trendHours===168?"7天":trendHours===72?"3天":"24小时"}窗口 ｜ ${shown.join(" · ") || "暂无数据"} ｜ 悬浮/轻触查看时点数据；柔光水幕表示真实浇水时段`;
 }
 
 function normalizeWateringEvent(row){
@@ -525,7 +553,7 @@ ui.waterBtn.addEventListener("click",()=>{ if(confirm("确认执行一次浇水�
 ui.stopBtn.addEventListener("click",()=>sendCommand("stop"));
 ui.autoBtn.addEventListener("click",()=>sendCommand(status?.auto ? "auto_off" : "auto_on"));
 ui.statusBtn.addEventListener("click",()=>sendCommand("status"));
-ui.resetBtn.addEventListener("click",()=>{ if(confirm("TEST 模式：确认清零今日次数？")) sendCommand("test_reset"); });
+ui.resetBtn.addEventListener("click",()=>{ if(confirm("确认将今日浇水次数复位为 0/3 吗？\n\n水泵运行或渗透复测期间不能复位。")) sendCommand("reset_daily"); });
 ui.refreshBtn.addEventListener("click",refreshAll);
 ui.trendRefreshBtn.addEventListener("click",loadHistory);
 
