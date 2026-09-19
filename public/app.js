@@ -28,6 +28,7 @@ let lastStatusReceivedAt = 0;
 let lastRenderedMoisture = null;
 let statusRequestInFlight = false;
 let deltaRequestInFlight = false;
+let lastWeatherDeltaAt = 0;
 
 function stateText(value){
   const map = {monitoring:"监测",pumping:"浇水",soaking:"渗透",locked:"闭锁",sensor_fault:"传感器故障",pump_fault:"水泵故障"};
@@ -300,6 +301,7 @@ async function loadHistory(){
       weatherMeta: result.weatherMeta || null,
     };
     historyCursorMs = computeHistoryCursorMs();
+    lastWeatherDeltaAt = Date.now();
     renderTrend();
   }catch(error){
     trendModel = null;
@@ -345,7 +347,11 @@ async function loadHistoryDelta(){
 
   try{
     const since = Math.max(0, historyCursorMs - 1000);
-    const result = await api(`/api/history/delta?since=${since}&soilLimit=240&weatherLimit=64&wateringLimit=40`);
+    const includeWeather = Date.now() - lastWeatherDeltaAt >= 5 * 60 * 1000;
+    const result = await api(
+      `/api/history/delta?since=${since}&soilLimit=240&weatherLimit=64&wateringLimit=40&weather=${includeWeather ? 1 : 0}`
+    );
+    if(includeWeather) lastWeatherDeltaAt = Date.now();
 
     const soilDelta = Array.isArray(result.soil) ? result.soil : [];
     const weatherDelta = Array.isArray(result.weather) ? result.weather : [];
