@@ -74,6 +74,7 @@ button:disabled{opacity:.42;cursor:not-allowed}
 .trend-svg{display:block;width:100%;height:auto;min-height:210px;touch-action:pan-y}
 .trend-empty{position:absolute;inset:0;display:grid;place-items:center;padding:20px;text-align:center;font-size:11px;color:var(--muted);background:rgba(251,252,250,.9)}
 .trend-meta{margin-top:6px;font-size:9.5px;line-height:1.45;color:#969e97}
+.trend-meta.warn{color:#a06f35}
 .grid-line{stroke:#e8ece8;stroke-width:1}
 .axis-tick{stroke:#b9c2ba;stroke-width:1}
 .axis-label,.x-label,.axis-unit{font-size:9px;fill:#8b948d;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
