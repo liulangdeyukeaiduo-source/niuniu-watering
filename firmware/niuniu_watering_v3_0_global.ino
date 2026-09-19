@@ -1,5 +1,5 @@
 /*
-  NIUNIU WATERING SYSTEM V3.0 GLOBAL
+  NIUNIU WATERING SYSTEM V3.1 PRODUCTION
   ESP32-S3 + Capacitive Soil Sensor + MOSFET + EMQX Cloud Global
   NO OLED / NO LED
 
@@ -16,8 +16,8 @@
     subscribe command:      niuniu/command
 
   Notes:
-    - First integrated test: TEST_MODE=true => pump 3 s, soak/verify 15 s.
-    - Production: set TEST_MODE=false => pump 60 s, soak/verify 90 s.
+    - Production build: TEST_MODE=false.
+    - Every manual/automatic watering action runs 60 s; soak/verify waits 90 s.
     - Auto mode is OFF after reboot.
     - MQTT uses TLS port 8883. Per current project decision, CA verification is disabled.
     - No direct HTTP history upload. One MQTT status per minute is marked historySample=true;
@@ -68,7 +68,7 @@ constexpr int STOP_MOISTURE  = 55;
 // ============================================================
 // 5. Watering parameters
 // ============================================================
-constexpr bool TEST_MODE = true;   // FIRST FULL-LINK TEST: true. Production: false.
+constexpr bool TEST_MODE = false;  // Production build.
 constexpr uint8_t MAX_DAILY = 3;
 
 constexpr uint32_t AUTO_WATER_MS   = TEST_MODE ? 3000UL  : 60000UL;
@@ -782,26 +782,33 @@ void handleCommand(const String& cmd, bool fromSerial = false) {
     return;
   }
 
-  if (cmd == "test_reset") {
-    if (!TEST_MODE) {
-      Serial.println("[COMMAND] test_reset rejected: TEST_MODE=false.");
-      return;
-    }
-
-    if (pumpOn) {
-      Serial.println("[COMMAND] test_reset rejected while pump is ON.");
+  if (cmd == "reset_daily" || cmd == "test_reset") {
+    if (pumpOn || runState == RunState::SOAKING) {
+      Serial.println("[RESET] Rejected: pump/soak cycle is active.");
+      publishStatus();
       return;
     }
 
     dailyCount = 0;
     autoCycleActive = false;
 
+    uint32_t key = currentDayKey();
+    if (key != 0) {
+      savedDayKey = key;
+    }
+
     if (runState == RunState::LOCKED) {
       runState = sensorValid ? RunState::MONITORING : RunState::SENSOR_FAULT;
     }
 
     saveDailyCounter();
-    Serial.println("[TEST] Daily counter reset.");
+
+    Serial.println("\n========================================");
+    Serial.println("          DAILY COUNTER RESET");
+    Serial.println("========================================");
+    Serial.printf("[RESET] Source = %s\n", fromSerial ? "SERIAL" : "MQTT/WEB");
+    Serial.printf("[RESET] Daily  = %u/%u\n", dailyCount, MAX_DAILY);
+
     publishStatus();
     return;
   }
@@ -907,7 +914,7 @@ void setup() {
   delay(1200);
 
   Serial.println("\n========================================");
-  Serial.println(" NIUNIU WATERING SYSTEM V3.0 GLOBAL");
+  Serial.println(" NIUNIU WATERING SYSTEM V3.1 PRODUCTION");
   Serial.println(" ESP32-S3 + MQTT EVENT PIPELINE");
   Serial.println(" NO OLED / NO LED");
   Serial.println("========================================");
@@ -944,7 +951,7 @@ void setup() {
   lastStatusAt = millis();
 
   Serial.println("[SYSTEM] READY");
-  Serial.println("[SERIAL] Commands: status | water | stop | auto_on | auto_off | test_reset");
+  Serial.println("[SERIAL] Commands: status | water | stop | auto_on | auto_off | reset_daily");
 }
 
 void loop() {
