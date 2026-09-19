@@ -297,6 +297,7 @@ async function getHistoryDelta(url, env) {
   const soilLimit = clampInt(url.searchParams.get("soilLimit"), 10, 2000, 240);
   const weatherLimit = clampInt(url.searchParams.get("weatherLimit"), 5, 500, 64);
   const wateringLimit = clampInt(url.searchParams.get("wateringLimit"), 5, 100, 40);
+  const includeWeather = url.searchParams.get("weather") !== "0";
 
   const [soilResult, weatherResult, wateringResult] = await Promise.all([
     env.DB.prepare(
@@ -306,13 +307,15 @@ async function getHistoryDelta(url, env) {
        ORDER BY ts ASC
        LIMIT ?3`
     ).bind("niuniu-main", sinceMs, soilLimit).all(),
-    env.DB.prepare(
-      `SELECT ts, temperature_c, humidity_pct, location, source
-       FROM weather_history
-       WHERE ts > ?1
-       ORDER BY ts ASC
-       LIMIT ?2`
-    ).bind(sinceMs, weatherLimit).all(),
+    includeWeather
+      ? env.DB.prepare(
+          `SELECT ts, temperature_c, humidity_pct, location, source
+           FROM weather_history
+           WHERE ts > ?1
+           ORDER BY ts ASC
+           LIMIT ?2`
+        ).bind(sinceMs, weatherLimit).all()
+      : Promise.resolve({ results: [] }),
     env.DB.prepare(
       `SELECT event_id, source, started_at, stopped_at, verified_at,
               planned_seconds, actual_seconds, before_moisture, after_moisture,
