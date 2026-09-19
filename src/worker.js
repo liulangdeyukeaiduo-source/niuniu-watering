@@ -18,7 +18,7 @@ const WEATHER = {
   longitude: 113.5665,
   location: "珠海市香洲区",
   source: "open-meteo",
-  minRefreshMs: 25 * 60 * 1000,
+  minRefreshMs: 14 * 60 * 1000,
   vpdAssistThresholdKpa: 1.60,
 };
 
@@ -36,7 +36,7 @@ export default {
           webhookConfigured: Boolean(env.EMQX_WEBHOOK_TOKEN),
           accessAuthenticated: hasAccessIdentity(request),
           commandProtected: env.REQUIRE_ACCESS !== "true" || hasAccessIdentity(request),
-          build: "2026-09-19-vpd-assist-v3.2",
+          build: "2026-09-19-vpd-zoom-density-v3.3",
           weatherSource: WEATHER.source,
           weatherLocation: WEATHER.location,
           ts: Math.floor(Date.now() / 1000),
@@ -236,7 +236,7 @@ async function getHistory(url, env) {
   const sinceSeconds = Math.floor(Date.now() / 1000) - days * 86400;
   const sinceMillis = sinceSeconds * 1000;
 
-  const soilLimit = clampInt(url.searchParams.get("soilLimit"), 100, 15000, 12000);
+  const soilLimit = clampInt(url.searchParams.get("soilLimit"), 100, 30000, 22000);
   const weatherLimit = clampInt(url.searchParams.get("weatherLimit"), 100, 15000, 12000);
   const wateringLimit = clampInt(url.searchParams.get("wateringLimit"), 20, 500, 200);
 
