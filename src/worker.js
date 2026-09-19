@@ -36,7 +36,7 @@ export default {
           webhookConfigured: Boolean(env.EMQX_WEBHOOK_TOKEN),
           accessAuthenticated: hasAccessIdentity(request),
           commandProtected: env.REQUIRE_ACCESS !== "true" || hasAccessIdentity(request),
-          build: "2026-09-19-vpd-zoom-density-v3.3",
+          build: "2026-09-19-realtime-console-v3.4",
           weatherSource: WEATHER.source,
           weatherLocation: WEATHER.location,
           ts: Math.floor(Date.now() / 1000),
@@ -53,6 +53,10 @@ export default {
 
       if (url.pathname === "/api/history" && request.method === "GET") {
         return await getHistory(url, env);
+      }
+
+      if (url.pathname === "/api/history/delta" && request.method === "GET") {
+        return await getHistoryDelta(url, env);
       }
 
       if (url.pathname === "/api/command" && request.method === "POST") {
@@ -278,6 +282,55 @@ async function getHistory(url, env) {
       location: WEATHER.location,
       refresh: weatherRefresh,
     },
+  });
+}
+
+async function getHistoryDelta(url, env) {
+  const nowMs = Date.now();
+  const sevenDaysAgoMs = nowMs - 7 * 86400 * 1000;
+  const rawSince = Number(url.searchParams.get("since") || 0);
+  const sinceMs = Number.isFinite(rawSince)
+    ? Math.max(sevenDaysAgoMs, Math.min(nowMs, Math.floor(rawSince)))
+    : sevenDaysAgoMs;
+  const sinceSeconds = Math.floor(sinceMs / 1000);
+
+  const soilLimit = clampInt(url.searchParams.get("soilLimit"), 10, 2000, 240);
+  const weatherLimit = clampInt(url.searchParams.get("weatherLimit"), 5, 500, 64);
+  const wateringLimit = clampInt(url.searchParams.get("wateringLimit"), 5, 100, 40);
+
+  const [soilResult, weatherResult, wateringResult] = await Promise.all([
+    env.DB.prepare(
+      `SELECT ts, device_id, moisture, raw, sensor_valid, state, pump, auto_mode
+       FROM soil_history
+       WHERE device_id = ?1 AND ts > ?2
+       ORDER BY ts ASC
+       LIMIT ?3`
+    ).bind("niuniu-main", sinceMs, soilLimit).all(),
+    env.DB.prepare(
+      `SELECT ts, temperature_c, humidity_pct, location, source
+       FROM weather_history
+       WHERE ts > ?1
+       ORDER BY ts ASC
+       LIMIT ?2`
+    ).bind(sinceMs, weatherLimit).all(),
+    env.DB.prepare(
+      `SELECT event_id, source, started_at, stopped_at, verified_at,
+              planned_seconds, actual_seconds, before_moisture, after_moisture,
+              result, last_phase, test, updated_at
+       FROM watering_events
+       WHERE updated_at > ?1
+       ORDER BY updated_at ASC
+       LIMIT ?2`
+    ).bind(sinceSeconds, wateringLimit).all(),
+  ]);
+
+  return json({
+    ok: true,
+    since: sinceMs,
+    serverNow: nowMs,
+    soil: soilResult.results || [],
+    weather: weatherResult.results || [],
+    watering: wateringResult.results || [],
   });
 }
 
