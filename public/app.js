@@ -106,11 +106,19 @@ function renderStatus(result){
     ? "当前为历史/过期状态，等待实时 Webhook"
     : wateringNow
       ? "💧 正在浇水 · 水泵运行中"
-      : "设备状态已同步到 Worker";
+      : d.vpdAssistReady
+        ? "VPD持续偏高 · 环境辅助已就绪"
+        : "设备状态已同步到 Worker";
 
   const items = [];
   if(d.raw !== undefined && d.raw !== null) items.push(`RAW ${d.raw}`);
   if(result.ageSeconds !== undefined) items.push(`数据 ${result.ageSeconds}s 前`);
+  if(Number.isFinite(Number(d.vpd)) && d.environmentValid){
+    items.push(`VPD ${Number(d.vpd).toFixed(2)} kPa`);
+    if(d.vpdAssistReady) items.push("VPD辅助就绪");
+  }else{
+    items.push("VPD降级：仅土壤");
+  }
   if(result.source) items.push(result.source);
   ui.meta.textContent = items.join(" ｜ ");
   ui.resetBtn.classList.remove("hidden");
@@ -159,6 +167,7 @@ function eventHtml(e){
 
 function sourceText(source){
   if(source === "AUTO") return "自动浇水";
+  if(source === "AUTO_VPD") return "VPD辅助浇水";
   if(source === "MANUAL_WEB") return "手动浇水";
   if(source === "MANUAL_SERIAL") return "串口手动";
   return source || "浇水";
@@ -431,6 +440,7 @@ function showTrendPointer(event){
     soil ? `<div class="tip-row"><span><i class="tip-dot soil"></i>土壤湿度</span><b>${formatValue(soil.v, "%")}</b></div>` : "",
     humidity ? `<div class="tip-row"><span><i class="tip-dot humidity"></i>环境湿度</span><b>${formatValue(humidity.v, "%")}</b></div>` : "",
     temp ? `<div class="tip-row"><span><i class="tip-dot temp"></i>温度</span><b>${formatValue(temp.v, "℃", 1)}</b></div>` : "",
+    temp && humidity ? `<div class="tip-row"><span>VPD</span><b>${formatValue(calculateVpd(temp.v, humidity.v), " kPa", 2)}</b></div>` : "",
   ];
 
   if(watering){
@@ -505,6 +515,14 @@ function formatTooltipTime(ms){
   return new Date(ms).toLocaleString("zh-CN",{
     hour12:false,month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"
   });
+}
+
+function calculateVpd(temperature, humidity){
+  const t = Number(temperature);
+  const rh = Number(humidity);
+  if(!Number.isFinite(t) || !Number.isFinite(rh)) return NaN;
+  const saturationKpa = 0.6108 * Math.exp((17.27 * t) / (t + 237.3));
+  return saturationKpa * (1 - clamp(rh, 0, 100) / 100);
 }
 
 function formatValue(value, unit, digits=0){
