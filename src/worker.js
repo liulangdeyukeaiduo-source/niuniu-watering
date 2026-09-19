@@ -87,7 +87,7 @@ async function getStatus(env) {
   try {
     row = await env.DB.prepare(
       `SELECT device_id, ts, moisture, raw, sensor_valid, state, daily, max_daily,
-              auto_mode, pump, source, event_id, interval_remaining, countdown, ip, test
+              auto_mode, pump, source, event_id, interval_remaining, countdown, ip, test, payload_json
        FROM device_state
        WHERE device_id = ?1
        LIMIT 1`
@@ -99,6 +99,13 @@ async function getStatus(env) {
 
   if (row) {
     const ageSeconds = Math.max(0, Math.floor(Date.now() / 1000) - Number(row.ts || 0));
+    let reportedOnline = true;
+    try {
+      const latestPayload = JSON.parse(row.payload_json || "{}");
+      if (typeof latestPayload.online === "boolean") {
+        reportedOnline = latestPayload.online;
+      }
+    } catch {}
     return json({
       ok: true,
       source: "device_state",
@@ -121,7 +128,7 @@ async function getStatus(env) {
         countdown: row.countdown,
         ip: row.ip,
         test: Boolean(row.test),
-        online: ageSeconds <= 90,
+        online: reportedOnline && ageSeconds <= 90,
       },
     });
   }
@@ -396,20 +403,20 @@ async function upsertDeviceState(payload, env) {
     )
     ON CONFLICT(device_id) DO UPDATE SET
       ts = excluded.ts,
-      moisture = excluded.moisture,
-      raw = excluded.raw,
-      sensor_valid = excluded.sensor_valid,
-      state = excluded.state,
-      daily = excluded.daily,
-      max_daily = excluded.max_daily,
-      auto_mode = excluded.auto_mode,
-      pump = excluded.pump,
-      source = excluded.source,
-      event_id = excluded.event_id,
-      interval_remaining = excluded.interval_remaining,
-      countdown = excluded.countdown,
-      ip = excluded.ip,
-      test = excluded.test,
+      moisture = COALESCE(excluded.moisture, device_state.moisture),
+      raw = COALESCE(excluded.raw, device_state.raw),
+      sensor_valid = COALESCE(excluded.sensor_valid, device_state.sensor_valid),
+      state = COALESCE(excluded.state, device_state.state),
+      daily = COALESCE(excluded.daily, device_state.daily),
+      max_daily = COALESCE(excluded.max_daily, device_state.max_daily),
+      auto_mode = COALESCE(excluded.auto_mode, device_state.auto_mode),
+      pump = COALESCE(excluded.pump, device_state.pump),
+      source = COALESCE(excluded.source, device_state.source),
+      event_id = COALESCE(excluded.event_id, device_state.event_id),
+      interval_remaining = COALESCE(excluded.interval_remaining, device_state.interval_remaining),
+      countdown = COALESCE(excluded.countdown, device_state.countdown),
+      ip = COALESCE(excluded.ip, device_state.ip),
+      test = COALESCE(excluded.test, device_state.test),
       payload_json = excluded.payload_json`
   ).bind(
     deviceId,
