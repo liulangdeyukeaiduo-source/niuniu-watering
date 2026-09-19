@@ -55,31 +55,39 @@
     <section class="trend card">
       <div class="section-head trend-head">
         <div>
-          <div class="section-title">7 天环境趋势</div>
+          <div id="trendTitle" class="section-title">7 天环境趋势</div>
           <div class="section-sub">土壤湿度 / 环境湿度 / 温度 · VPD 辅助判断 · 浇水柔光标记</div>
         </div>
         <button id="trendRefreshBtn" class="ghost">更新图表</button>
       </div>
 
-      <div class="trend-toolbar" aria-label="趋势时间范围">
-        <button class="range-btn" data-hours="24">24小时</button>
-        <button class="range-btn" data-hours="72">3天</button>
-        <button class="range-btn active" data-hours="168">7天</button>
+      <div class="trend-toolbar" aria-label="趋势时间范围与缩放">
+        <div class="range-controls">
+          <button class="range-btn" data-hours="24">24小时</button>
+          <button class="range-btn" data-hours="72">3天</button>
+          <button class="range-btn active" data-hours="168">7天</button>
+        </div>
+        <div class="zoom-controls" aria-label="趋势缩放">
+          <button id="zoomOutBtn" class="zoom-btn" title="缩小">−</button>
+          <button id="zoomInBtn" class="zoom-btn" title="放大">＋</button>
+          <button id="zoomResetBtn" class="zoom-reset" title="恢复完整时间范围">复位</button>
+        </div>
       </div>
 
       <div class="legend" aria-label="图例">
         <span><i class="legend-line soil"></i>土壤湿度</span>
         <span><i class="legend-line humidity"></i>环境湿度</span>
         <span><i class="legend-line temp"></i>温度</span>
+        <span><i class="legend-line vpd"></i>VPD</span>
         <span><i class="legend-band watering"></i>浇水时段</span>
       </div>
 
       <div id="trendBox" class="trend-box">
-        <svg id="trendSvg" class="trend-svg" viewBox="0 0 520 240" role="img" aria-label="最近七天环境趋势折线图"></svg>
+        <svg id="trendSvg" class="trend-svg" viewBox="0 0 520 300" role="img" aria-label="环境与VPD趋势图"></svg>
         <div id="trendTooltip" class="trend-tooltip hidden" role="status" aria-live="polite"></div>
         <div id="trendEmpty" class="trend-empty">正在读取历史数据…</div>
       </div>
-      <div id="trendMeta" class="trend-meta">电脑端悬浮、手机端轻触图表可查看时点数据。历史数据仅按需读取，避免高频占用 D1。</div>
+      <div id="trendMeta" class="trend-meta">悬浮/轻触查看时点数据；放大后可左右拖动时间窗口。缩放仅处理已加载数据，不重复读取 D1。</div>
     </section>
 
     <section class="events card">
