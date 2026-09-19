@@ -42,7 +42,7 @@ button:disabled{opacity:.42;cursor:not-allowed}
 .water{background:var(--green);color:var(--green-text)}
 .stop{background:var(--red);color:var(--red-text)}
 .normal,.ghost{background:var(--gray);color:#384039}
-.test{background:var(--amber);color:var(--amber-text)}
+.test{background:#f2eee3;color:#665d49}
 .ghost{height:30px;width:auto;font-size:11px;border-radius:9px}
 .hidden{display:none!important}
 .message{margin-top:10px;padding-top:8px;border-top:1px solid var(--line);font-size:11px;line-height:1.45;color:#5f6961}
@@ -69,7 +69,7 @@ button:disabled{opacity:.42;cursor:not-allowed}
 .legend-line.soil{background:#4f8a55}
 .legend-line.humidity{background:#5d8fa3}
 .legend-line.temp{background:#c58d42}
-.legend-band{display:inline-block;width:17px;height:8px;border-radius:2px;background:repeating-linear-gradient(135deg,rgba(91,111,98,.16) 0 4px,rgba(91,111,98,.36) 4px 7px)}
+.legend-band{display:inline-block;width:18px;height:8px;border-radius:999px;background:linear-gradient(90deg,rgba(104,151,116,0),rgba(104,151,116,.34),rgba(104,151,116,0));box-shadow:0 0 8px rgba(104,151,116,.12)}
 .trend-box{position:relative;margin-top:7px;border:1px solid #edf1ec;border-radius:13px;background:#fbfcfa;overflow:hidden;transition:box-shadow .25s ease,border-color .25s ease}
 .trend-svg{display:block;width:100%;height:auto;min-height:210px;touch-action:pan-y}
 .trend-empty{position:absolute;inset:0;display:grid;place-items:center;padding:20px;text-align:center;font-size:11px;color:var(--muted);background:rgba(251,252,250,.9)}
@@ -82,10 +82,14 @@ button:disabled{opacity:.42;cursor:not-allowed}
 .series.soil{stroke:#4f8a55}
 .series.humidity{stroke:#5d8fa3}
 .series.temp{stroke:#c58d42}
-.watering-band{stroke-width:.8;opacity:.98;pointer-events:none}
-.watering-band.auto{stroke:rgba(78,130,72,.65)}
-.watering-band.manual{stroke:rgba(75,94,82,.65)}
-.watering-drop{font-size:10px;pointer-events:none}
+.watering-halo{pointer-events:none;opacity:.96;filter:drop-shadow(0 0 4px rgba(82,123,94,.10))}
+.watering-focus-line{pointer-events:none;stroke-width:.85;stroke-linecap:round;opacity:.58}
+.watering-focus-line.auto{stroke:rgba(72,126,80,.64)}
+.watering-focus-line.manual{stroke:rgba(78,125,137,.60)}
+.watering-dot{pointer-events:none;stroke:#fff;stroke-width:1.4}
+.watering-dot.auto{fill:#6eaa79}
+.watering-dot.manual{fill:#739eaa}
+.watering-dot-highlight{pointer-events:none;fill:rgba(255,255,255,.78)}
 .trend-hit{pointer-events:all;cursor:crosshair}
 .hover-line{stroke:#59675d;stroke-width:1;stroke-dasharray:3 3;opacity:.78;pointer-events:none}
 .hover-point{stroke:#fff;stroke-width:1.5;pointer-events:none}
@@ -109,19 +113,14 @@ button:disabled{opacity:.42;cursor:not-allowed}
 /* Real-time watering emphasis */
 body.watering-active .hero,
 body.watering-active .controls{
-  border-color:rgba(75,139,82,.46);
-  box-shadow:0 0 0 2px rgba(92,159,98,.10),0 10px 28px rgba(75,139,82,.10)
+  border-color:rgba(91,143,101,.34);
+  box-shadow:0 10px 30px rgba(68,113,78,.07),inset 0 1px 0 rgba(255,255,255,.7)
 }
 body.watering-active .trend-box{
-  border-color:rgba(75,139,82,.58);
-  animation:wateringPulse 1.35s ease-in-out infinite;
+  border-color:rgba(91,143,101,.34);
+  box-shadow:inset 0 0 0 1px rgba(105,158,115,.10),0 10px 28px rgba(68,113,78,.055)
 }
-body.watering-active .state-grid,
-body.watering-active .hero-hint{color:#2e6b36}
-@keyframes wateringPulse{
-  0%,100%{box-shadow:inset 0 0 0 2px rgba(86,148,91,.16),0 0 0 0 rgba(86,148,91,.04)}
-  50%{box-shadow:inset 0 0 0 3px rgba(86,148,91,.30),0 0 0 6px rgba(86,148,91,.06)}
-}
+body.watering-active .hero-hint{color:#376d42}
 
 /* Desktop: use the screen instead of centering a phone-sized column */
 @media(min-width:768px){
