@@ -9,6 +9,7 @@ const COMMANDS = new Set([
   "auto_on",
   "auto_off",
   "status",
+  "reset_daily",
   "test_reset",
 ]);
 
@@ -26,7 +27,7 @@ export default {
           webhookConfigured: Boolean(env.EMQX_WEBHOOK_TOKEN),
           accessAuthenticated: hasAccessIdentity(request),
           commandProtected: env.REQUIRE_ACCESS !== "true" || hasAccessIdentity(request),
-          build: "2026-09-19-esp32-v3-global-1",
+          build: "2026-09-19-esp32-v3.1-production",
           ts: Math.floor(Date.now() / 1000),
         });
       }
