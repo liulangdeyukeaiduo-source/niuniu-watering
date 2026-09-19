@@ -12,7 +12,7 @@ const ui = {
 
 let health = null;
 let status = null;
-let history = { soil: [], weather: [], watering: [] };
+let history = { soil: [], weather: [], watering: [], weatherMeta: null };
 let busy = false;
 let trendHours = 168;
 let trendModel = null;
@@ -176,6 +176,7 @@ async function loadHistory(){
       soil: Array.isArray(result.soil) ? result.soil : [],
       weather: Array.isArray(result.weather) ? result.weather : [],
       watering: Array.isArray(result.watering) ? result.watering : [],
+      weatherMeta: result.weatherMeta || null,
     };
     renderTrend();
   }catch(error){
@@ -192,6 +193,7 @@ async function loadHistory(){
 function renderTrend(){
   const now = Date.now();
   const since = now - trendHours * 3600 * 1000;
+  const weatherInfo = weatherFreshness(now);
 
   const soil = history.soil
     .map(r => ({t:toMillis(r.ts), v:Number(r.moisture), valid:Boolean(r.sensor_valid)}))
@@ -220,7 +222,8 @@ function renderTrend(){
     trendModel = null;
     ui.trendEmpty.textContent = "当前时间范围内暂无可绘制的历史数据";
     ui.trendEmpty.classList.remove("hidden");
-    ui.trendMeta.textContent = `已读取：土壤 ${history.soil.length} 条，天气 ${history.weather.length} 条，浇水 ${history.watering.length} 条。`;
+    ui.trendMeta.textContent = `已读取：土壤 ${history.soil.length} 条，天气 ${history.weather.length} 条，浇水 ${history.watering.length} 条 ｜ ${weatherInfo.text}`;
+    ui.trendMeta.classList.toggle("warn", weatherInfo.stale);
     return;
   }
 
@@ -337,7 +340,40 @@ function renderTrend(){
   if(humidity.length || temp.length) shown.push(`天气 ${Math.max(humidity.length,temp.length)}`);
   if(watering.length) shown.push(`浇水 ${watering.length}`);
 
-  ui.trendMeta.textContent = `${trendHours===168?"7天":trendHours===72?"3天":"24小时"}窗口 ｜ ${shown.join(" · ") || "暂无数据"} ｜ 悬浮/轻触查看时点数据；柔光水幕表示真实浇水时段`;
+  ui.trendMeta.textContent = `${trendHours===168?"7天":trendHours===72?"3天":"24小时"}窗口 ｜ ${shown.join(" · ") || "暂无数据"} ｜ ${weatherInfo.text} ｜ 悬浮/轻触查看时点数据；柔光水幕表示真实浇水时段`;
+  ui.trendMeta.classList.toggle("warn", weatherInfo.stale);
+}
+
+function weatherFreshness(now = Date.now()){
+  const times = history.weather
+    .map(row => toMillis(row.ts))
+    .filter(Number.isFinite);
+
+  if(!times.length){
+    return { stale:true, text:"⚠ 天气数据暂未更新" };
+  }
+
+  const latest = Math.max(...times);
+  const ageMinutes = Math.max(0, Math.floor((now - latest) / 60000));
+  const stamp = new Date(latest).toLocaleString("zh-CN",{
+    hour12:false,
+    month:"2-digit",
+    day:"2-digit",
+    hour:"2-digit",
+    minute:"2-digit"
+  });
+
+  if(ageMinutes > 90){
+    return {
+      stale:true,
+      text:`⚠ 天气更新：${stamp}（已 ${ageMinutes} 分钟未更新）`
+    };
+  }
+
+  return {
+    stale:false,
+    text:`天气更新：${stamp}`
+  };
 }
 
 function normalizeWateringEvent(row){
