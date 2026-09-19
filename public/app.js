@@ -6,11 +6,14 @@ const ui = {
   controlHint: $("controlHint"), message: $("message"), meta: $("meta"),
   waterBtn: $("waterBtn"), stopBtn: $("stopBtn"), autoBtn: $("autoBtn"), statusBtn: $("statusBtn"), resetBtn: $("resetBtn"), refreshBtn: $("refreshBtn"),
   eventList: $("eventList"), eventCount: $("eventCount"),
+  trendSvg: $("trendSvg"), trendEmpty: $("trendEmpty"), trendMeta: $("trendMeta"), trendRefreshBtn: $("trendRefreshBtn"),
 };
 
 let health = null;
 let status = null;
+let history = { soil: [], weather: [], watering: [] };
 let busy = false;
+let trendHours = 168;
 
 function stateText(value){
   const map = {monitoring:"监测",pumping:"浇水",soaking:"渗透",locked:"闭锁",sensor_fault:"传感器故障",pump_fault:"水泵故障"};
@@ -19,7 +22,12 @@ function stateText(value){
 
 function timeText(ts){
   if(!ts) return "--";
-  return new Date(Number(ts) * 1000).toLocaleString("zh-CN", {hour12:false,month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  return new Date(toMillis(ts)).toLocaleString("zh-CN", {hour12:false,month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit"});
+}
+
+function toMillis(ts){
+  const n = Number(ts || 0);
+  return n > 1e12 ? n : n * 1000;
 }
 
 function setMessage(text, type=""){
@@ -134,6 +142,141 @@ function eventHtml(e){
   return `<div class="event"><div class="event-main"><div class="event-title">💧 ${escapeHtml(source)}</div><div class="event-sub">${escapeHtml(timeText(when))}${seconds != null ? ` ｜ ${seconds}s` : ""}<br>${escapeHtml(moisture)}</div></div><div class="event-status">${escapeHtml(phase)}</div></div>`;
 }
 
+async function loadHistory(){
+  ui.trendEmpty.textContent = "正在读取历史数据…";
+  ui.trendEmpty.classList.remove("hidden");
+  ui.trendRefreshBtn.disabled = true;
+  try{
+    const result = await api("/api/history?days=7&soilLimit=10500&weatherLimit=2000&wateringLimit=100");
+    history = {
+      soil: Array.isArray(result.soil) ? result.soil : [],
+      weather: Array.isArray(result.weather) ? result.weather : [],
+      watering: Array.isArray(result.watering) ? result.watering : [],
+    };
+    renderTrend();
+  }catch(error){
+    clearSvg(ui.trendSvg);
+    ui.trendEmpty.textContent = `历史趋势读取失败：${error.message}`;
+    ui.trendEmpty.classList.remove("hidden");
+    ui.trendMeta.textContent = "趋势读取失败不会影响实时状态和远程控制。";
+  }finally{
+    ui.trendRefreshBtn.disabled = false;
+  }
+}
+
+function renderTrend(){
+  const now = Date.now();
+  const since = now - trendHours * 3600 * 1000;
+  const soil = history.soil
+    .map(r => ({t:toMillis(r.ts), v:Number(r.moisture), valid:Boolean(r.sensor_valid)}))
+    .filter(r => r.t >= since && r.t <= now && Number.isFinite(r.v) && r.valid);
+  const humidity = history.weather
+    .map(r => ({t:toMillis(r.ts), v:Number(r.humidity_pct)}))
+    .filter(r => r.t >= since && r.t <= now && Number.isFinite(r.v));
+  const temp = history.weather
+    .map(r => ({t:toMillis(r.ts), v:Number(r.temperature_c)}))
+    .filter(r => r.t >= since && r.t <= now && Number.isFinite(r.v));
+  const watering = history.watering
+    .map(r => ({...r, t:toMillis(r.started_at || r.updated_at)}))
+    .filter(r => r.t >= since && r.t <= now);
+
+  clearSvg(ui.trendSvg);
+
+  if(!soil.length && !humidity.length && !temp.length){
+    ui.trendEmpty.textContent = "当前时间范围内暂无可绘制的历史数据";
+    ui.trendEmpty.classList.remove("hidden");
+    ui.trendMeta.textContent = `已读取：土壤 ${history.soil.length} 条，天气 ${history.weather.length} 条，浇水 ${history.watering.length} 条。`;
+    return;
+  }
+
+  ui.trendEmpty.classList.add("hidden");
+
+  const W = 520, H = 240;
+  const m = {l:40, r:38, t:18, b:34};
+  const pw = W - m.l - m.r;
+  const ph = H - m.t - m.b;
+  const x = t => m.l + ((t - since) / (now - since)) * pw;
+  const yPct = v => m.t + (1 - clamp(Number(v), 0, 100) / 100) * ph;
+  const yTemp = v => m.t + (1 - clamp(Number(v), 0, 50) / 50) * ph;
+
+  for(const pct of [0,25,50,75,100]){
+    const y = yPct(pct);
+    appendSvg("line",{x1:m.l,y1:y,x2:W-m.r,y2:y,class:"grid-line"});
+    appendSvg("text",{x:m.l-7,y:y+3,class:"axis-label left","text-anchor":"end"}, `${pct}`);
+  }
+  appendSvg("text",{x:m.l-7,y:m.t-6,class:"axis-unit left","text-anchor":"end"},"%");
+  for(const t of [0,25,50]){
+    const y = yTemp(t);
+    appendSvg("text",{x:W-m.r+7,y:y+3,class:"axis-label right","text-anchor":"start"}, `${t}`);
+  }
+  appendSvg("text",{x:W-m.r+7,y:m.t-6,class:"axis-unit right","text-anchor":"start"},"°C");
+
+  for(let i=0;i<5;i++){
+    const p = i / 4;
+    const tx = m.l + p * pw;
+    const ts = since + p * (now - since);
+    appendSvg("line",{x1:tx,y1:H-m.b,x2:tx,y2:H-m.b+4,class:"axis-tick"});
+    appendSvg("text",{x:tx,y:H-10,class:"x-label","text-anchor":i===0?"start":i===4?"end":"middle"}, formatAxisTime(ts, trendHours));
+  }
+
+  watering.slice(-30).forEach(e=>{
+    const xx = x(e.t);
+    const cls = e.source === "AUTO" ? "watering-marker auto" : "watering-marker manual";
+    const line = appendSvg("line",{x1:xx,y1:m.t,x2:xx,y2:H-m.b,class:cls});
+    const title = document.createElementNS("http://www.w3.org/2000/svg","title");
+    title.textContent = `${e.source === "AUTO" ? "自动浇水" : "手动浇水"} · ${timeText(e.t/1000)}`;
+    line.appendChild(title);
+    appendSvg("circle",{cx:xx,cy:m.t+4,r:3.2,class:cls});
+  });
+
+  drawSeries(downsample(soil, 480), x, yPct, "series soil");
+  drawSeries(downsample(humidity, 480), x, yPct, "series humidity");
+  drawSeries(downsample(temp, 480), x, yTemp, "series temp");
+
+  const shown = [];
+  if(soil.length) shown.push(`土壤 ${soil.length}`);
+  if(humidity.length || temp.length) shown.push(`天气 ${Math.max(humidity.length,temp.length)}`);
+  if(watering.length) shown.push(`浇水 ${watering.length}`);
+  ui.trendMeta.textContent = `${trendHours===168?"7天":trendHours===72?"3天":"24小时"}窗口 ｜ ${shown.join(" · ") || "暂无数据"} ｜ 图表仅手动刷新历史数据`;
+}
+
+function drawSeries(points, x, y, className){
+  if(points.length < 2) return;
+  const d = points.map((p,i)=>`${i?"L":"M"} ${x(p.t).toFixed(2)} ${y(p.v).toFixed(2)}`).join(" ");
+  appendSvg("path",{d,class:className});
+}
+
+function appendSvg(tag, attrs={}, text=""){
+  const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for(const [k,v] of Object.entries(attrs)) el.setAttribute(k, String(v));
+  if(text) el.textContent = text;
+  ui.trendSvg.appendChild(el);
+  return el;
+}
+
+function clearSvg(svg){
+  while(svg.firstChild) svg.removeChild(svg.firstChild);
+}
+
+function downsample(rows, maxPoints){
+  if(rows.length <= maxPoints) return rows;
+  const step = rows.length / maxPoints;
+  const out = [];
+  for(let i=0;i<maxPoints;i++) out.push(rows[Math.floor(i*step)]);
+  if(out[out.length-1] !== rows[rows.length-1]) out.push(rows[rows.length-1]);
+  return out;
+}
+
+function formatAxisTime(ms, hours){
+  const d = new Date(ms);
+  if(hours <= 24) return d.toLocaleTimeString("zh-CN",{hour12:false,hour:"2-digit",minute:"2-digit"});
+  return d.toLocaleDateString("zh-CN",{month:"2-digit",day:"2-digit"});
+}
+
+function clamp(v,min,max){
+  return Math.min(max,Math.max(min,v));
+}
+
 async function sendCommand(command){
   if(busy) return;
   busy = true;
@@ -173,6 +316,15 @@ ui.autoBtn.addEventListener("click",()=>sendCommand(status?.auto ? "auto_off" : 
 ui.statusBtn.addEventListener("click",()=>sendCommand("status"));
 ui.resetBtn.addEventListener("click",()=>{ if(confirm("TEST 模式：确认清零今日次数？")) sendCommand("test_reset"); });
 ui.refreshBtn.addEventListener("click",refreshAll);
+ui.trendRefreshBtn.addEventListener("click",loadHistory);
+
+document.querySelectorAll(".range-btn").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    trendHours = Number(btn.dataset.hours || 168);
+    document.querySelectorAll(".range-btn").forEach(x=>x.classList.toggle("active",x===btn));
+    renderTrend();
+  });
+});
 
 async function refreshAll(){
   await loadHealth();
@@ -193,9 +345,7 @@ function stopPolling(){
 function startPolling(){
   stopPolling();
   if(document.hidden) return;
-  // Status still feels near-real-time while cutting D1 reads by ~3x.
   statusTimer = setInterval(loadStatus, 15000);
-  // Watering events change infrequently; commands trigger an immediate refresh.
   eventsTimer = setInterval(loadEvents, 300000);
 }
 
@@ -208,5 +358,5 @@ document.addEventListener("visibilitychange", async ()=>{
   startPolling();
 });
 
-await refreshAll();
+await Promise.all([refreshAll(), loadHistory()]);
 startPolling();
