@@ -423,18 +423,18 @@ async function upsertDeviceState(payload, env) {
     now,
     nullableInt(payload.moisture),
     nullableInt(payload.raw),
-    boolInt(payload.sensorValid),
+    nullableBoolInt(payload.sensorValid),
     nullableText(payload.state),
     nullableInt(payload.daily),
     nullableInt(payload.maxDaily),
-    boolInt(payload.auto),
-    boolInt(payload.pump),
+    nullableBoolInt(payload.auto),
+    nullableBoolInt(payload.pump),
     nullableText(payload.source),
     nullableText(payload.eventId),
     nullableInt(payload.intervalRemaining),
     nullableInt(payload.countdown),
     nullableText(payload.ip),
-    boolInt(payload.test),
+    nullableBoolInt(payload.test),
     JSON.stringify(payload)
   ).run();
 }
@@ -549,6 +549,11 @@ function measurementOrNull(value) {
 function nullableText(value) {
   if (value === undefined || value === null || value === "") return null;
   return String(value);
+}
+
+function nullableBoolInt(value) {
+  if (value === undefined || value === null || value === "") return null;
+  return boolInt(value);
 }
 
 function boolInt(value) {
