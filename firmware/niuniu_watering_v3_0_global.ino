@@ -218,6 +218,10 @@ void checkDailyReset() {
   }
 }
 
+// Forward declaration: sensor fault during pumping must use the normal
+// stop/event lifecycle instead of silently switching the GPIO off.
+void stopPumpAndSoak(const char* result);
+
 // ============================================================
 // 10. Soil sensor
 // ============================================================
@@ -253,8 +257,9 @@ void updateSoilSensor() {
     autoCycleActive = false;
 
     if (pumpOn) {
-      digitalWrite(PUMP_PIN, PUMP_OFF_LEVEL);
-      pumpOn = false;
+      Serial.println("[SAFETY] Sensor fault while pumping. Stop pump immediately.");
+      stopPumpAndSoak("SENSOR_FAULT");
+      return;
     }
 
     runState = RunState::SENSOR_FAULT;
@@ -544,7 +549,11 @@ void verifyWateringEvent() {
   if (sensorValid) {
     afterMoisture = moisture;
     afterRaw = soilRaw;
-    publishWateringEvent("VERIFIED", "OK");
+
+    const char* finalResult =
+      (stopResult == "PLANNED_COMPLETE") ? "OK" : stopResult.c_str();
+
+    publishWateringEvent("VERIFIED", finalResult);
   } else {
     afterMoisture = -1;
     afterRaw = -1;
