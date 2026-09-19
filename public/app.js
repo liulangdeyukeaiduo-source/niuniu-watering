@@ -6,7 +6,8 @@ const ui = {
   controlHint: $("controlHint"), message: $("message"), meta: $("meta"),
   waterBtn: $("waterBtn"), stopBtn: $("stopBtn"), autoBtn: $("autoBtn"), statusBtn: $("statusBtn"), resetBtn: $("resetBtn"), refreshBtn: $("refreshBtn"),
   eventList: $("eventList"), eventCount: $("eventCount"),
-  trendSvg: $("trendSvg"), trendEmpty: $("trendEmpty"), trendMeta: $("trendMeta"), trendRefreshBtn: $("trendRefreshBtn"),
+  trendBox: $("trendBox"), trendSvg: $("trendSvg"), trendTooltip: $("trendTooltip"),
+  trendEmpty: $("trendEmpty"), trendMeta: $("trendMeta"), trendRefreshBtn: $("trendRefreshBtn"),
 };
 
 let health = null;
@@ -14,6 +15,7 @@ let status = null;
 let history = { soil: [], weather: [], watering: [] };
 let busy = false;
 let trendHours = 168;
+let trendModel = null;
 
 function stateText(value){
   const map = {monitoring:"监测",pumping:"浇水",soaking:"渗透",locked:"闭锁",sensor_fault:"传感器故障",pump_fault:"水泵故障"};
@@ -71,6 +73,7 @@ async function loadStatus(){
     status = result.data;
     renderStatus(result);
   }catch(error){
+    document.body.classList.remove("watering-active");
     ui.device.textContent = "异常";
     ui.heroHint.textContent = "状态读取失败";
     setMessage(`状态读取失败：${error.message}`, "err");
@@ -80,6 +83,7 @@ async function loadStatus(){
 function renderStatus(result){
   const d = result.data;
   if(!d){
+    document.body.classList.remove("watering-active");
     ui.moisture.textContent = "--%";
     ui.device.textContent = "无数据";
     ui.state.textContent = "--";
@@ -90,12 +94,19 @@ function renderStatus(result){
     return;
   }
 
+  const wateringNow = d.online && d.state === "pumping";
+  document.body.classList.toggle("watering-active", wateringNow);
+
   ui.moisture.textContent = d.sensorValid ? `${d.moisture}%` : "--%";
   ui.device.textContent = d.online ? "在线" : "离线";
   ui.state.textContent = stateText(d.state);
   ui.daily.textContent = `${d.daily ?? "--"}/${d.maxDaily ?? 3}`;
   ui.auto.textContent = d.auto ? "开启" : "关闭";
-  ui.heroHint.textContent = result.stale ? "当前为历史/过期状态，等待实时 Webhook" : (d.state === "pumping" ? "妞妞正在认真浇水 💧" : "设备状态已同步到 Worker");
+  ui.heroHint.textContent = result.stale
+    ? "当前为历史/过期状态，等待实时 Webhook"
+    : wateringNow
+      ? "💧 正在浇水 · 水泵运行中"
+      : "设备状态已同步到 Worker";
 
   const items = [];
   if(d.raw !== undefined && d.raw !== null) items.push(`RAW ${d.raw}`);
@@ -105,6 +116,8 @@ function renderStatus(result){
   ui.resetBtn.classList.toggle("hidden", !d.test);
   ui.autoBtn.textContent = d.auto ? "关闭自动" : "开启自动";
   updateControls();
+
+  if(trendModel) renderTrend();
 }
 
 function updateControls(){
@@ -134,18 +147,29 @@ async function loadEvents(){
 }
 
 function eventHtml(e){
-  const source = e.source === "AUTO" ? "自动浇水" : e.source === "MANUAL_WEB" ? "手动浇水" : (e.source || "浇水");
+  const source = sourceText(e.source);
   const seconds = e.actual_seconds ?? e.planned_seconds;
   const when = e.started_at || e.updated_at;
   const phase = e.last_phase || "--";
-  const moisture = e.before_moisture != null && e.after_moisture != null ? `湿度 ${e.before_moisture}% → ${e.after_moisture}%` : "湿度数据待补全";
+  const moisture = e.before_moisture != null && e.after_moisture != null
+    ? `湿度 ${e.before_moisture}% → ${e.after_moisture}%`
+    : "湿度数据待补全";
   return `<div class="event"><div class="event-main"><div class="event-title">💧 ${escapeHtml(source)}</div><div class="event-sub">${escapeHtml(timeText(when))}${seconds != null ? ` ｜ ${seconds}s` : ""}<br>${escapeHtml(moisture)}</div></div><div class="event-status">${escapeHtml(phase)}</div></div>`;
+}
+
+function sourceText(source){
+  if(source === "AUTO") return "自动浇水";
+  if(source === "MANUAL_WEB") return "手动浇水";
+  if(source === "MANUAL_SERIAL") return "串口手动";
+  return source || "浇水";
 }
 
 async function loadHistory(){
   ui.trendEmpty.textContent = "正在读取历史数据…";
   ui.trendEmpty.classList.remove("hidden");
   ui.trendRefreshBtn.disabled = true;
+  hideTrendTooltip();
+
   try{
     const result = await api("/api/history?days=7&soilLimit=10500&weatherLimit=2000&wateringLimit=100");
     history = {
@@ -155,6 +179,7 @@ async function loadHistory(){
     };
     renderTrend();
   }catch(error){
+    trendModel = null;
     clearSvg(ui.trendSvg);
     ui.trendEmpty.textContent = `历史趋势读取失败：${error.message}`;
     ui.trendEmpty.classList.remove("hidden");
@@ -167,22 +192,32 @@ async function loadHistory(){
 function renderTrend(){
   const now = Date.now();
   const since = now - trendHours * 3600 * 1000;
+
   const soil = history.soil
     .map(r => ({t:toMillis(r.ts), v:Number(r.moisture), valid:Boolean(r.sensor_valid)}))
-    .filter(r => r.t >= since && r.t <= now && Number.isFinite(r.v) && r.valid);
+    .filter(r => r.t >= since && r.t <= now && Number.isFinite(r.v) && r.valid)
+    .sort((a,b)=>a.t-b.t);
+
   const humidity = history.weather
     .map(r => ({t:toMillis(r.ts), v:Number(r.humidity_pct)}))
-    .filter(r => r.t >= since && r.t <= now && Number.isFinite(r.v));
+    .filter(r => r.t >= since && r.t <= now && Number.isFinite(r.v))
+    .sort((a,b)=>a.t-b.t);
+
   const temp = history.weather
     .map(r => ({t:toMillis(r.ts), v:Number(r.temperature_c)}))
-    .filter(r => r.t >= since && r.t <= now && Number.isFinite(r.v));
+    .filter(r => r.t >= since && r.t <= now && Number.isFinite(r.v))
+    .sort((a,b)=>a.t-b.t);
+
   const watering = history.watering
-    .map(r => ({...r, t:toMillis(r.started_at || r.updated_at)}))
-    .filter(r => r.t >= since && r.t <= now);
+    .map(normalizeWateringEvent)
+    .filter(r => r.start >= since && r.start <= now)
+    .sort((a,b)=>a.start-b.start);
 
   clearSvg(ui.trendSvg);
+  hideTrendTooltip();
 
   if(!soil.length && !humidity.length && !temp.length){
+    trendModel = null;
     ui.trendEmpty.textContent = "当前时间范围内暂无可绘制的历史数据";
     ui.trendEmpty.classList.remove("hidden");
     ui.trendMeta.textContent = `已读取：土壤 ${history.soil.length} 条，天气 ${history.weather.length} 条，浇水 ${history.watering.length} 条。`;
@@ -199,12 +234,26 @@ function renderTrend(){
   const yPct = v => m.t + (1 - clamp(Number(v), 0, 100) / 100) * ph;
   const yTemp = v => m.t + (1 - clamp(Number(v), 0, 50) / 50) * ph;
 
+  appendSvg("defs",{}, "");
+  const defs = ui.trendSvg.querySelector("defs");
+  defs.innerHTML = `
+    <pattern id="wateringAutoPattern" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
+      <rect width="8" height="8" fill="rgba(104,151,95,.16)"></rect>
+      <rect width="3" height="8" fill="rgba(104,151,95,.30)"></rect>
+    </pattern>
+    <pattern id="wateringManualPattern" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
+      <rect width="8" height="8" fill="rgba(92,112,99,.15)"></rect>
+      <rect width="3" height="8" fill="rgba(92,112,99,.30)"></rect>
+    </pattern>
+  `;
+
   for(const pct of [0,25,50,75,100]){
     const y = yPct(pct);
     appendSvg("line",{x1:m.l,y1:y,x2:W-m.r,y2:y,class:"grid-line"});
     appendSvg("text",{x:m.l-7,y:y+3,class:"axis-label left","text-anchor":"end"}, `${pct}`);
   }
   appendSvg("text",{x:m.l-7,y:m.t-6,class:"axis-unit left","text-anchor":"end"},"%");
+
   for(const t of [0,25,50]){
     const y = yTemp(t);
     appendSvg("text",{x:W-m.r+7,y:y+3,class:"axis-label right","text-anchor":"start"}, `${t}`);
@@ -219,25 +268,184 @@ function renderTrend(){
     appendSvg("text",{x:tx,y:H-10,class:"x-label","text-anchor":i===0?"start":i===4?"end":"middle"}, formatAxisTime(ts, trendHours));
   }
 
-  watering.slice(-30).forEach(e=>{
-    const xx = x(e.t);
-    const cls = e.source === "AUTO" ? "watering-marker auto" : "watering-marker manual";
-    const line = appendSvg("line",{x1:xx,y1:m.t,x2:xx,y2:H-m.b,class:cls});
-    const title = document.createElementNS("http://www.w3.org/2000/svg","title");
-    title.textContent = `${e.source === "AUTO" ? "自动浇水" : "手动浇水"} · ${timeText(e.t/1000)}`;
-    line.appendChild(title);
-    appendSvg("circle",{cx:xx,cy:m.t+4,r:3.2,class:cls});
+  const wateringBands = [];
+  watering.slice(-40).forEach(e=>{
+    const realStartX = x(clamp(e.start, since, now));
+    const realEndX = x(clamp(Math.max(e.end, e.start + 1000), since, now));
+    const minimumWidth = 10;
+    let bandX = Math.min(realStartX, W-m.r-minimumWidth);
+    let bandW = Math.max(realEndX - realStartX, minimumWidth);
+    if(bandX + bandW > W-m.r) bandW = Math.max(3, W-m.r-bandX);
+
+    const cls = e.source === "AUTO" ? "watering-band auto" : "watering-band manual";
+    const fill = e.source === "AUTO" ? "url(#wateringAutoPattern)" : "url(#wateringManualPattern)";
+    const rect = appendSvg("rect",{x:bandX,y:m.t,width:bandW,height:ph,class:cls,fill,rx:2});
+    rect.setAttribute("aria-label", `${sourceText(e.source)} ${timeText(e.start/1000)}`);
+    appendSvg("text",{x:bandX+Math.min(bandW/2,8),y:m.t+13,class:"watering-drop","text-anchor":"middle"},"💧");
+
+    wateringBands.push({...e, x1:bandX, x2:bandX+bandW});
   });
 
   drawSeries(downsample(soil, 480), x, yPct, "series soil");
   drawSeries(downsample(humidity, 480), x, yPct, "series humidity");
   drawSeries(downsample(temp, 480), x, yTemp, "series temp");
 
+  const hoverLine = appendSvg("line",{x1:m.l,y1:m.t,x2:m.l,y2:H-m.b,class:"hover-line hidden-svg"});
+  const hoverSoil = appendSvg("circle",{cx:m.l,cy:m.t,r:4,class:"hover-point soil hidden-svg"});
+  const hoverHumidity = appendSvg("circle",{cx:m.l,cy:m.t,r:4,class:"hover-point humidity hidden-svg"});
+  const hoverTemp = appendSvg("circle",{cx:m.l,cy:m.t,r:4,class:"hover-point temp hidden-svg"});
+  const hit = appendSvg("rect",{x:m.l,y:m.t,width:pw,height:ph,class:"trend-hit",fill:"transparent"});
+
+  trendModel = {
+    now, since, W, H, m, pw, ph, x, yPct, yTemp,
+    soil, humidity, temp, wateringBands,
+    hoverLine, hoverSoil, hoverHumidity, hoverTemp,
+  };
+
+  bindTrendPointer(hit);
+
   const shown = [];
   if(soil.length) shown.push(`土壤 ${soil.length}`);
   if(humidity.length || temp.length) shown.push(`天气 ${Math.max(humidity.length,temp.length)}`);
   if(watering.length) shown.push(`浇水 ${watering.length}`);
-  ui.trendMeta.textContent = `${trendHours===168?"7天":trendHours===72?"3天":"24小时"}窗口 ｜ ${shown.join(" · ") || "暂无数据"} ｜ 图表仅手动刷新历史数据`;
+
+  ui.trendMeta.textContent = `${trendHours===168?"7天":trendHours===72?"3天":"24小时"}窗口 ｜ ${shown.join(" · ") || "暂无数据"} ｜ 悬浮/轻触查看时点数据；阴影带表示真实浇水时段`;
+}
+
+function normalizeWateringEvent(row){
+  const start = toMillis(row.started_at || row.updated_at);
+  let end = toMillis(row.stopped_at || row.verified_at || 0);
+  const seconds = Number(row.actual_seconds ?? row.planned_seconds ?? 0);
+
+  if(!end || end < start){
+    end = start + Math.max(1, seconds || 1) * 1000;
+  }
+
+  return {
+    ...row,
+    start,
+    end,
+    source: row.source || "UNKNOWN",
+  };
+}
+
+function bindTrendPointer(hit){
+  hit.addEventListener("pointermove", showTrendPointer);
+  hit.addEventListener("pointerdown", showTrendPointer);
+  hit.addEventListener("pointerleave", (event)=>{
+    if(event.pointerType !== "touch") hideTrendTooltip();
+  });
+}
+
+function showTrendPointer(event){
+  const model = trendModel;
+  if(!model) return;
+
+  const svgRect = ui.trendSvg.getBoundingClientRect();
+  if(!svgRect.width || !svgRect.height) return;
+
+  const svgX = (event.clientX - svgRect.left) * model.W / svgRect.width;
+  const clampedX = clamp(svgX, model.m.l, model.W-model.m.r);
+  const ratio = (clampedX - model.m.l) / model.pw;
+  const t = model.since + ratio * (model.now - model.since);
+
+  const soil = nearestPoint(model.soil, t);
+  const humidity = nearestPoint(model.humidity, t);
+  const temp = nearestPoint(model.temp, t);
+  const watering = nearestWateringBand(model.wateringBands, clampedX);
+
+  model.hoverLine.setAttribute("x1", clampedX);
+  model.hoverLine.setAttribute("x2", clampedX);
+  model.hoverLine.classList.remove("hidden-svg");
+
+  positionHoverPoint(model.hoverSoil, clampedX, soil ? model.yPct(soil.v) : null);
+  positionHoverPoint(model.hoverHumidity, clampedX, humidity ? model.yPct(humidity.v) : null);
+  positionHoverPoint(model.hoverTemp, clampedX, temp ? model.yTemp(temp.v) : null);
+
+  const rows = [
+    `<div class="tip-time">${escapeHtml(formatTooltipTime(t))}</div>`,
+    soil ? `<div class="tip-row"><span><i class="tip-dot soil"></i>土壤湿度</span><b>${formatValue(soil.v, "%")}</b></div>` : "",
+    humidity ? `<div class="tip-row"><span><i class="tip-dot humidity"></i>环境湿度</span><b>${formatValue(humidity.v, "%")}</b></div>` : "",
+    temp ? `<div class="tip-row"><span><i class="tip-dot temp"></i>温度</span><b>${formatValue(temp.v, "℃", 1)}</b></div>` : "",
+  ];
+
+  if(watering){
+    const seconds = Math.max(1, Math.round((watering.end-watering.start)/1000));
+    rows.push(`<div class="tip-watering">💧 ${escapeHtml(sourceText(watering.source))}<br><span>${escapeHtml(timeText(watering.start/1000))} · ${seconds}s</span></div>`);
+  }
+
+  ui.trendTooltip.innerHTML = rows.filter(Boolean).join("");
+  ui.trendTooltip.classList.remove("hidden");
+
+  const boxRect = ui.trendBox.getBoundingClientRect();
+  const px = event.clientX - boxRect.left;
+  ui.trendTooltip.style.left = `${clamp(px, 12, boxRect.width-12)}px`;
+  ui.trendTooltip.style.top = "10px";
+  ui.trendTooltip.classList.toggle("flip", px > boxRect.width * 0.58);
+}
+
+function hideTrendTooltip(){
+  ui.trendTooltip?.classList.add("hidden");
+  if(!trendModel) return;
+  trendModel.hoverLine?.classList.add("hidden-svg");
+  trendModel.hoverSoil?.classList.add("hidden-svg");
+  trendModel.hoverHumidity?.classList.add("hidden-svg");
+  trendModel.hoverTemp?.classList.add("hidden-svg");
+}
+
+function positionHoverPoint(el, x, y){
+  if(y == null || !Number.isFinite(y)){
+    el.classList.add("hidden-svg");
+    return;
+  }
+  el.setAttribute("cx", x);
+  el.setAttribute("cy", y);
+  el.classList.remove("hidden-svg");
+}
+
+function nearestPoint(rows, target){
+  if(!rows.length) return null;
+  let lo = 0, hi = rows.length - 1;
+
+  while(lo < hi){
+    const mid = Math.floor((lo + hi) / 2);
+    if(rows[mid].t < target) lo = mid + 1;
+    else hi = mid;
+  }
+
+  const a = rows[lo];
+  const b = lo > 0 ? rows[lo-1] : null;
+  if(!b) return a;
+  return Math.abs(a.t-target) < Math.abs(b.t-target) ? a : b;
+}
+
+function nearestWateringBand(bands, x){
+  if(!bands.length) return null;
+  const direct = bands.find(b => x >= b.x1 && x <= b.x2);
+  if(direct) return direct;
+
+  let best = null;
+  let bestDistance = Infinity;
+  for(const band of bands){
+    const center = (band.x1 + band.x2) / 2;
+    const distance = Math.abs(center - x);
+    if(distance < bestDistance){
+      bestDistance = distance;
+      best = band;
+    }
+  }
+  return bestDistance <= 7 ? best : null;
+}
+
+function formatTooltipTime(ms){
+  return new Date(ms).toLocaleString("zh-CN",{
+    hour12:false,month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"
+  });
+}
+
+function formatValue(value, unit, digits=0){
+  const n = Number(value);
+  return Number.isFinite(n) ? `${n.toFixed(digits)}${unit}` : "--";
 }
 
 function drawSeries(points, x, y, className){
@@ -291,6 +499,9 @@ async function sendCommand(command){
     setMessage(`命令已发送：${command}`, "ok");
     await new Promise(r=>setTimeout(r,700));
     await Promise.all([loadStatus(), loadEvents()]);
+    if(command === "water" || command === "stop"){
+      setTimeout(loadHistory, 1500);
+    }
   }catch(error){
     if(error.status === 403){
       setMessage("远程控制尚未开放：请先启用 Cloudflare Access。", "err");
@@ -324,6 +535,10 @@ document.querySelectorAll(".range-btn").forEach(btn=>{
     document.querySelectorAll(".range-btn").forEach(x=>x.classList.toggle("active",x===btn));
     renderTrend();
   });
+});
+
+window.addEventListener("resize",()=>{
+  hideTrendTooltip();
 });
 
 async function refreshAll(){
