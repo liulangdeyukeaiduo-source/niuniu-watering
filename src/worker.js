@@ -19,6 +19,7 @@ const WEATHER = {
   location: "珠海市香洲区",
   source: "open-meteo",
   minRefreshMs: 25 * 60 * 1000,
+  vpdAssistThresholdKpa: 1.60,
 };
 
 export default {
@@ -35,7 +36,7 @@ export default {
           webhookConfigured: Boolean(env.EMQX_WEBHOOK_TOKEN),
           accessAuthenticated: hasAccessIdentity(request),
           commandProtected: env.REQUIRE_ACCESS !== "true" || hasAccessIdentity(request),
-          build: "2026-09-19-weather-cron-v1",
+          build: "2026-09-19-vpd-assist-v3.2",
           weatherSource: WEATHER.source,
           weatherLocation: WEATHER.location,
           ts: Math.floor(Date.now() / 1000),
@@ -105,6 +106,7 @@ function hasAccessIdentity(request) {
 
 async function getStatus(env) {
   let row = null;
+  let latestPayload = {};
   try {
     row = await env.DB.prepare(
       `SELECT device_id, ts, moisture, raw, sensor_valid, state, daily, max_daily,
@@ -122,11 +124,13 @@ async function getStatus(env) {
     const ageSeconds = Math.max(0, Math.floor(Date.now() / 1000) - Number(row.ts || 0));
     let reportedOnline = true;
     try {
-      const latestPayload = JSON.parse(row.payload_json || "{}");
+      latestPayload = JSON.parse(row.payload_json || "{}");
       if (typeof latestPayload.online === "boolean") {
         reportedOnline = latestPayload.online;
       }
-    } catch {}
+    } catch {
+      latestPayload = {};
+    }
     return json({
       ok: true,
       source: "device_state",
@@ -149,6 +153,13 @@ async function getStatus(env) {
         countdown: row.countdown,
         ip: row.ip,
         test: Boolean(row.test),
+        temperature: finiteOrNull(latestPayload.temperature),
+        humidity: finiteOrNull(latestPayload.humidity),
+        vpd: finiteOrNull(latestPayload.vpd),
+        environmentValid: Boolean(latestPayload.environmentValid),
+        environmentAge: nullableInt(latestPayload.environmentAge),
+        vpdAssistReady: Boolean(latestPayload.vpdAssistReady),
+        autoReason: nullableText(latestPayload.autoReason),
         online: reportedOnline && ageSeconds <= 90,
       },
     });
@@ -276,12 +287,35 @@ async function refreshWeather(env, { force = false } = {}) {
   let latestTs = 0;
   try {
     const latest = await env.DB.prepare(
-      `SELECT ts
+      `SELECT ts, temperature_c, humidity_pct
        FROM weather_history
        ORDER BY ts DESC
        LIMIT 1`
     ).first();
     latestTs = Number(latest?.ts || 0);
+
+    if (!force && latestTs > 0 && now - latestTs < WEATHER.minRefreshMs) {
+      const temperature = Number(latest?.temperature_c);
+      const humidity = Number(latest?.humidity_pct);
+      const vpd = calculateVpd(temperature, humidity);
+      const mqtt = await publishEnvironmentToEmqx(env, {
+        ts: latestTs,
+        temperature,
+        humidity,
+        vpd,
+      });
+
+      return {
+        ok: true,
+        skipped: true,
+        reason: "fresh",
+        lastTs: latestTs,
+        temperature,
+        humidity,
+        vpd,
+        mqtt,
+      };
+    }
   } catch (error) {
     if (!isMissingTableError(error, "weather_history")) throw error;
     console.warn("weather_history_missing_skip_refresh");
@@ -290,15 +324,6 @@ async function refreshWeather(env, { force = false } = {}) {
       skipped: true,
       reason: "weather_history_missing",
       lastTs: 0,
-    };
-  }
-
-  if (!force && latestTs > 0 && now - latestTs < WEATHER.minRefreshMs) {
-    return {
-      ok: true,
-      skipped: true,
-      reason: "fresh",
-      lastTs: latestTs,
     };
   }
 
@@ -327,6 +352,7 @@ async function refreshWeather(env, { force = false } = {}) {
     throw new Error("Open-Meteo returned invalid current weather");
   }
 
+  const vpd = calculateVpd(temperature, humidity);
   const sampleTs = Date.now();
 
   await env.DB.prepare(
@@ -341,11 +367,20 @@ async function refreshWeather(env, { force = false } = {}) {
     WEATHER.source
   ).run();
 
+  const mqtt = await publishEnvironmentToEmqx(env, {
+    ts: sampleTs,
+    temperature,
+    humidity,
+    vpd,
+  });
+
   console.log("weather_sample_stored", {
     ts: sampleTs,
     temperature,
     humidity,
+    vpd,
     location: WEATHER.location,
+    mqtt,
   });
 
   return {
@@ -354,9 +389,80 @@ async function refreshWeather(env, { force = false } = {}) {
     ts: sampleTs,
     temperature,
     humidity,
+    vpd,
     location: WEATHER.location,
     source: WEATHER.source,
+    mqtt,
   };
+}
+
+function calculateVpd(temperature, humidity) {
+  const t = Number(temperature);
+  const rh = Number(humidity);
+  if (!Number.isFinite(t) || !Number.isFinite(rh)) return null;
+
+  const saturationKpa =
+    0.6108 * Math.exp((17.27 * t) / (t + 237.3));
+  const vpd = saturationKpa * (1 - Math.min(100, Math.max(0, rh)) / 100);
+  return Math.round(vpd * 100) / 100;
+}
+
+async function publishEnvironmentToEmqx(env, sample) {
+  if (!env.EMQX_API_BASE || !env.EMQX_APP_ID || !env.EMQX_APP_SECRET) {
+    return { ok: false, skipped: true, reason: "emqx_not_configured" };
+  }
+
+  if (!Number.isFinite(sample.temperature) ||
+      !Number.isFinite(sample.humidity) ||
+      !Number.isFinite(sample.vpd)) {
+    return { ok: false, skipped: true, reason: "invalid_environment" };
+  }
+
+  const auth = btoa(`${env.EMQX_APP_ID}:${env.EMQX_APP_SECRET}`);
+  const payload = JSON.stringify({
+    type: "environment",
+    timestamp: Math.floor(Number(sample.ts) / 1000),
+    temperature: Number(sample.temperature),
+    humidity: Number(sample.humidity),
+    vpd: Number(sample.vpd),
+    vpdAssistThreshold: WEATHER.vpdAssistThresholdKpa,
+    location: WEATHER.location,
+    source: WEATHER.source,
+  });
+
+  try {
+    const response = await fetch(
+      `${env.EMQX_API_BASE.replace(/\/$/, "")}/publish`,
+      {
+        method: "POST",
+        headers: {
+          "authorization": `Basic ${auth}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          // Reuse the existing authorized command subscription. Environment
+          // messages are typed JSON, while control commands remain plain text.
+          topic: "niuniu/command",
+          qos: 0,
+          retain: true,
+          payload,
+          payload_encoding: "plain",
+        }),
+      }
+    );
+
+    const text = await response.text();
+    return {
+      ok: response.ok,
+      status: response.status,
+      response: text.slice(0, 300),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 async function sendCommand(request, env) {
@@ -652,6 +758,11 @@ function normalizeTimestamp(value) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return null;
   return n > 1e12 ? Math.floor(n / 1000) : Math.floor(n);
+}
+
+function finiteOrNull(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 function nullableInt(value) {
