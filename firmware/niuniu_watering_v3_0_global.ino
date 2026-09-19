@@ -1,5 +1,5 @@
 /*
-  NIUNIU WATERING SYSTEM V3.1 PRODUCTION
+  NIUNIU WATERING SYSTEM V3.2 VPD ASSIST
   ESP32-S3 + Capacitive Soil Sensor + MOSFET + EMQX Cloud Global
   NO OLED / NO LED
 
@@ -14,6 +14,7 @@
     publish status:         niuniu/status
     publish watering event: niuniu/watering/event
     subscribe command:      niuniu/command
+    retained environment:    typed JSON on niuniu/command
 
   Notes:
     - Production build: TEST_MODE=false.
@@ -65,6 +66,14 @@ constexpr int RAW_WET = 1300;
 constexpr int START_MOISTURE = 35;
 constexpr int STOP_MOISTURE  = 55;
 
+// VPD assists only in the near-dry band. Soil moisture remains primary.
+constexpr int VPD_ASSIST_MIN_MOISTURE = 36;
+constexpr int VPD_ASSIST_MAX_MOISTURE = 40;
+constexpr float VPD_ASSIST_THRESHOLD_KPA = 1.60f;
+constexpr uint32_t VPD_SUSTAIN_SECONDS = 25UL * 60UL;
+constexpr uint32_t ENV_MAX_AGE_SECONDS = 90UL * 60UL;
+constexpr uint32_t ENV_MAX_SAMPLE_GAP_SECONDS = 60UL * 60UL;
+
 // ============================================================
 // 5. Watering parameters
 // ============================================================
@@ -108,6 +117,16 @@ bool autoMode = false;
 bool pumpOn = false;
 bool currentPumpManual = false;
 bool autoCycleActive = false;
+bool autoCycleVpdAssist = false;
+
+// Latest environment packet delivered by Worker -> EMQX retained message.
+bool environmentValid = false;
+float environmentTemperature = 0.0f;
+float environmentHumidity = 0.0f;
+float environmentVpd = 0.0f;
+uint32_t environmentTimestamp = 0;
+uint32_t highVpdSince = 0;
+uint8_t highVpdSamples = 0;
 
 int soilRaw = 0;
 int moisture = 0;
@@ -208,6 +227,7 @@ void checkDailyReset() {
     savedDayKey = key;
     dailyCount = 0;
     autoCycleActive = false;
+    autoCycleVpdAssist = false;
 
     if (!pumpOn && runState == RunState::LOCKED) {
       runState = sensorValid ? RunState::MONITORING : RunState::SENSOR_FAULT;
@@ -272,7 +292,141 @@ void updateSoilSensor() {
 }
 
 // ============================================================
-// 11. Pump hardware confirmation
+// 11. Environment / VPD helpers
+// ============================================================
+bool environmentIsFresh() {
+  if (!environmentValid || environmentTimestamp == 0) return false;
+
+  uint32_t now = epochNow();
+  if (now == 0) return false;
+
+  if (environmentTimestamp > now + 300UL) return false;
+  return (now - environmentTimestamp) <= ENV_MAX_AGE_SECONDS;
+}
+
+bool vpdAssistReady() {
+  if (!environmentIsFresh()) return false;
+  if (environmentVpd < VPD_ASSIST_THRESHOLD_KPA) return false;
+  if (highVpdSamples < 2 || highVpdSince == 0) return false;
+
+  uint32_t now = epochNow();
+  if (now == 0 || now < highVpdSince) return false;
+
+  return (now - highVpdSince) >= VPD_SUSTAIN_SECONDS;
+}
+
+uint32_t environmentAgeSeconds() {
+  if (!environmentIsFresh()) return 0;
+  uint32_t now = epochNow();
+  return now > environmentTimestamp ? now - environmentTimestamp : 0;
+}
+
+bool jsonNumber(const String& json, const char* key, double& out) {
+  String needle = String("\"") + key + "\":";
+  int pos = json.indexOf(needle);
+  if (pos < 0) return false;
+
+  pos += needle.length();
+  while (pos < (int)json.length() &&
+         (json[pos] == ' ' || json[pos] == '\t')) {
+    pos++;
+  }
+
+  int end = pos;
+  while (end < (int)json.length()) {
+    char c = json[end];
+    if (c == ',' || c == '}') break;
+    end++;
+  }
+
+  if (end <= pos) return false;
+
+  String token = json.substring(pos, end);
+  token.trim();
+  if (token.length() == 0) return false;
+
+  out = token.toDouble();
+  return true;
+}
+
+void handleEnvironmentPayload(const String& json) {
+  if (json.indexOf("\"type\":\"environment\"") < 0 &&
+      json.indexOf("\"type\": \"environment\"") < 0) {
+    Serial.println("[ENV] Ignored unknown JSON payload on command topic.");
+    return;
+  }
+
+  double tsValue = 0;
+  double tempValue = 0;
+  double humidityValue = 0;
+  double vpdValue = 0;
+
+  if (!jsonNumber(json, "timestamp", tsValue) ||
+      !jsonNumber(json, "temperature", tempValue) ||
+      !jsonNumber(json, "humidity", humidityValue) ||
+      !jsonNumber(json, "vpd", vpdValue)) {
+    Serial.println("[ENV] Invalid environment payload.");
+    return;
+  }
+
+  uint32_t sampleTs = (uint32_t)tsValue;
+  if (sampleTs < 1700000000UL ||
+      tempValue < -50.0 || tempValue > 70.0 ||
+      humidityValue < 0.0 || humidityValue > 100.0 ||
+      vpdValue < 0.0 || vpdValue > 10.0) {
+    Serial.println("[ENV] Environment payload outside valid range.");
+    return;
+  }
+
+  if (environmentTimestamp > 0 && sampleTs < environmentTimestamp) {
+    Serial.println("[ENV] Older environment packet ignored.");
+    return;
+  }
+
+  bool duplicate = (sampleTs == environmentTimestamp);
+  uint32_t previousTs = environmentTimestamp;
+  float previousVpd = environmentVpd;
+
+  environmentValid = true;
+  environmentTimestamp = sampleTs;
+  environmentTemperature = (float)tempValue;
+  environmentHumidity = (float)humidityValue;
+  environmentVpd = (float)vpdValue;
+
+  if (!duplicate) {
+    if (environmentVpd >= VPD_ASSIST_THRESHOLD_KPA) {
+      bool continuous =
+        previousTs > 0 &&
+        previousVpd >= VPD_ASSIST_THRESHOLD_KPA &&
+        sampleTs > previousTs &&
+        (sampleTs - previousTs) <= ENV_MAX_SAMPLE_GAP_SECONDS;
+
+      if (continuous) {
+        if (highVpdSamples < 255) highVpdSamples++;
+      } else {
+        highVpdSamples = 1;
+        highVpdSince = sampleTs;
+      }
+    } else {
+      highVpdSamples = 0;
+      highVpdSince = 0;
+    }
+  }
+
+  Serial.printf(
+    "[ENV] T=%.1fC RH=%.0f%% VPD=%.2fkPa Samples=%u Assist=%s\n",
+    environmentTemperature,
+    environmentHumidity,
+    environmentVpd,
+    highVpdSamples,
+    vpdAssistReady() ? "READY" : "NO"
+  );
+
+  publishStatus();
+}
+
+// ============================================================
+// 12. Pump hardware confirmation
 // IMPORTANT: digitalRead confirms the ESP32 GPIO output level only.
 // It does NOT prove pump current/flow. Physical feedback needs a current/flow sensor.
 // ============================================================
@@ -288,12 +442,12 @@ void pumpHardwareOffNoEvent() {
 }
 
 // ============================================================
-// 12. MQTT payloads
+// 13. MQTT payloads
 // ============================================================
 void publishStatus(bool historySample = false) {
   if (!mqtt.connected()) return;
 
-  char payload[900];
+  char payload[1200];
   String ip = (WiFi.status() == WL_CONNECTED)
                 ? WiFi.localIP().toString()
                 : String("");
@@ -331,7 +485,14 @@ void publishStatus(bool historySample = false) {
       "\"countdown\":%lu,"
       "\"ip\":\"%s\","
       "\"test\":%s,"
-      "\"historySample\":%s"
+      "\"historySample\":%s,"
+      "\"temperature\":%.1f,"
+      "\"humidity\":%.1f,"
+      "\"vpd\":%.2f,"
+      "\"environmentValid\":%s,"
+      "\"environmentAge\":%lu,"
+      "\"vpdAssistReady\":%s,"
+      "\"autoReason\":\"%s\""
     "}",
     DEVICE_ID,
     (unsigned long)ts,
@@ -348,7 +509,15 @@ void publishStatus(bool historySample = false) {
     (unsigned long)countdown,
     ip.c_str(),
     TEST_MODE ? "true" : "false",
-    historySample ? "true" : "false"
+    historySample ? "true" : "false",
+    environmentTemperature,
+    environmentHumidity,
+    environmentVpd,
+    environmentIsFresh() ? "true" : "false",
+    (unsigned long)environmentAgeSeconds(),
+    vpdAssistReady() ? "true" : "false",
+    autoCycleVpdAssist ? "vpd_assist" :
+      (environmentIsFresh() ? "soil_primary" : "soil_only")
   );
 
   bool ok = mqtt.publish(STATUS_TOPIC, payload, true);
@@ -442,7 +611,7 @@ void beginEvent(const char* source, uint32_t durationMs) {
 }
 
 // ============================================================
-// 13. Pump / watering event lifecycle
+// 14. Pump / watering event lifecycle
 // ============================================================
 bool canStartPump() {
   return sensorValid &&
@@ -576,6 +745,7 @@ void verifyWateringEvent() {
 
 void emergencyStop() {
   autoCycleActive = false;
+  autoCycleVpdAssist = false;
 
   if (pumpOn) {
     stopPumpAndSoak("MANUAL_STOP");
@@ -594,7 +764,7 @@ void emergencyStop() {
 }
 
 // ============================================================
-// 14. Automatic watering state machine
+// 15. Automatic watering state machine
 // ============================================================
 void updateWateringLogic() {
   uint32_t now = millis();
@@ -627,9 +797,25 @@ void updateWateringLogic() {
     if (autoCycleActive && autoMode) {
       if (moisture >= STOP_MOISTURE) {
         autoCycleActive = false;
+        autoCycleVpdAssist = false;
         runState = RunState::MONITORING;
         Serial.println("[AUTO] Target moisture reached.");
         publishStatus();
+      } else if (autoCycleVpdAssist) {
+        // VPD assistance is deliberately conservative: one early watering only.
+        // Continue as a normal dry-soil cycle only if soil is now <= 35%.
+        if (moisture <= START_MOISTURE) {
+          autoCycleVpdAssist = false;
+          runState = RunState::MONITORING;
+          Serial.println("[AUTO] VPD assist finished; soil is now hard-dry. Continue soil-primary cycle.");
+          startPump(AUTO_WATER_MS, false, "AUTO");
+        } else {
+          autoCycleActive = false;
+          autoCycleVpdAssist = false;
+          runState = RunState::MONITORING;
+          Serial.println("[AUTO] VPD assist completed one watering; return to monitoring.");
+          publishStatus();
+        }
       } else {
         Serial.println("[AUTO] Moisture still low after soak. Start next small watering.");
         runState = RunState::MONITORING;
@@ -655,17 +841,30 @@ void updateWateringLogic() {
     return;
   }
 
-  if (runState == RunState::MONITORING &&
-      autoMode &&
-      moisture <= START_MOISTURE) {
-    Serial.println("[AUTO] Dry threshold reached. Start watering cycle.");
-    autoCycleActive = true;
-    startPump(AUTO_WATER_MS, false, "AUTO");
+  if (runState == RunState::MONITORING && autoMode) {
+    if (moisture <= START_MOISTURE) {
+      Serial.println("[AUTO] Hard soil threshold reached. Start soil-primary watering cycle.");
+      autoCycleActive = true;
+      autoCycleVpdAssist = false;
+      startPump(AUTO_WATER_MS, false, "AUTO");
+      return;
+    }
+
+    bool inAssistBand =
+      moisture >= VPD_ASSIST_MIN_MOISTURE &&
+      moisture <= VPD_ASSIST_MAX_MOISTURE;
+
+    if (inAssistBand && vpdAssistReady()) {
+      Serial.println("[AUTO] VPD high and sustained in near-dry soil band. Start ONE assisted watering.");
+      autoCycleActive = true;
+      autoCycleVpdAssist = true;
+      startPump(AUTO_WATER_MS, false, "AUTO_VPD");
+    }
   }
 }
 
 // ============================================================
-// 15. Wi-Fi
+// 16. Wi-Fi
 // ============================================================
 void configureClock() {
   configTime(
@@ -725,7 +924,7 @@ void maintainWiFi() {
 }
 
 // ============================================================
-// 16. Commands
+// 17. Commands
 // ============================================================
 void handleCommand(const String& cmd, bool fromSerial = false) {
   Serial.print(fromSerial ? "[SERIAL] Command = " : "[MQTT] Command = ");
@@ -751,6 +950,7 @@ void handleCommand(const String& cmd, bool fromSerial = false) {
   if (cmd == "auto_off") {
     autoMode = false;
     autoCycleActive = false;
+    autoCycleVpdAssist = false;
 
     if (pumpOn && !currentPumpManual) {
       stopPumpAndSoak("AUTO_DISABLED");
@@ -773,6 +973,7 @@ void handleCommand(const String& cmd, bool fromSerial = false) {
     }
 
     autoCycleActive = false;
+    autoCycleVpdAssist = false;
 
     startPump(
       MANUAL_WATER_MS,
@@ -791,6 +992,7 @@ void handleCommand(const String& cmd, bool fromSerial = false) {
 
     dailyCount = 0;
     autoCycleActive = false;
+    autoCycleVpdAssist = false;
 
     uint32_t key = currentDayKey();
     if (key != 0) {
@@ -819,15 +1021,21 @@ void handleCommand(const String& cmd, bool fromSerial = false) {
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   if (String(topic) != COMMAND_TOPIC) return;
 
-  String cmd;
-  cmd.reserve(length + 1);
+  String message;
+  message.reserve(length + 1);
 
   for (unsigned int i = 0; i < length; ++i) {
-    cmd += (char)payload[i];
+    message += (char)payload[i];
   }
 
-  cmd.trim();
-  handleCommand(cmd, false);
+  message.trim();
+
+  if (message.startsWith("{")) {
+    handleEnvironmentPayload(message);
+    return;
+  }
+
+  handleCommand(message, false);
 }
 
 void maintainSerialCommands() {
@@ -842,7 +1050,7 @@ void maintainSerialCommands() {
 }
 
 // ============================================================
-// 17. MQTT
+// 18. MQTT
 // ============================================================
 bool connectMQTT() {
   if (WiFi.status() != WL_CONNECTED) return false;
@@ -878,7 +1086,7 @@ bool connectMQTT() {
   Serial.println("OK");
 
   bool subOk = mqtt.subscribe(COMMAND_TOPIC, 0);
-  Serial.print("[MQTT] Subscribe niuniu/command: ");
+  Serial.print("[MQTT] Subscribe niuniu/command (commands + retained environment): ");
   Serial.println(subOk ? "OK" : "FAILED");
 
   publishStatus(false);
@@ -906,7 +1114,7 @@ void maintainMQTT() {
 }
 
 // ============================================================
-// 18. Setup / Loop
+// 19. Setup / Loop
 // ============================================================
 void setup() {
   Serial.begin(115200);
@@ -914,7 +1122,7 @@ void setup() {
   delay(1200);
 
   Serial.println("\n========================================");
-  Serial.println(" NIUNIU WATERING SYSTEM V3.1 PRODUCTION");
+  Serial.println(" NIUNIU WATERING SYSTEM V3.2 VPD ASSIST");
   Serial.println(" ESP32-S3 + MQTT EVENT PIPELINE");
   Serial.println(" NO OLED / NO LED");
   Serial.println("========================================");
