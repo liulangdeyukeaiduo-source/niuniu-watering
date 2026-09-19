@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#f4f7f2">
   <title>妞妞的小花园</title>
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/style.css?v=hardware-v2">
 </head>
 <body>
   <main class="app">
@@ -57,59 +57,71 @@
       <div class="section-head hardware-head">
         <div>
           <div class="section-title">硬件状态总览</div>
-          <div class="section-sub">结构示意 + 实时运行状态</div>
+          <div class="section-sub">部件状态随设备上报同步更新</div>
         </div>
         <span id="hardwareLiveBadge" class="hardware-live-badge">同步中</span>
       </div>
 
-      <div class="hardware-layout">
-        <figure class="hardware-figure">
-          <div class="hardware-image-wrap">
-            <span class="hardware-image-tag">硬件结构示意</span>
-            <img src="/hardware-status.svg" alt="浇花项目硬件结构示意图" loading="eager" decoding="async">
+      <div id="hardwareScene" class="hardware-scene" data-mode="unknown">
+        <div class="hardware-stage" id="hardwareStage">正在同步设备状态</div>
+        <div class="hardware-map">
+          <svg class="hardware-links" viewBox="0 0 600 660" preserveAspectRatio="none" aria-hidden="true">
+            <path class="signal-link" d="M180 100 H420 M450 100 V330"/>
+            <path class="power-link" d="M450 560 V330 H300 V560 H180"/>
+            <path class="water-link" d="M150 330 V560 H24 V100 H150"/>
+            <path class="water-flow" d="M150 330 V560 H24 V100 H150"/>
+          </svg>
+          <div class="hardware-node node-sensor" id="nodeSensor">
+            <div class="hardware-art art-sensor" role="img" aria-label="花盆 · 土壤探头卡通示意"></div>
+            <div class="hardware-node-copy">
+              <div class="hardware-node-name">花盆 · 土壤探头</div>
+              <div id="hwSensor" class="hardware-state unknown"><i></i><span>同步中</span></div>
+              <div id="hwSensorDetail" class="hardware-detail">等待采样</div>
+            </div>
           </div>
-          <figcaption>
-            上图用于展示硬件结构；实时状态以下方状态卡为准。水位、流量及24V电源暂未配置独立反馈传感器。
-          </figcaption>
-        </figure>
-
-        <div class="hardware-status-grid" aria-label="硬件实时状态">
-          <div class="hardware-item">
-            <div class="hardware-item-name">ESP32-S3</div>
-            <div id="hwEsp32" class="hardware-state unknown"><i></i><span>同步中</span></div>
-            <div id="hwEsp32Detail" class="hardware-detail">主控制器</div>
+          <div class="hardware-node node-controller" id="nodeEsp32">
+            <div class="hardware-art art-controller" role="img" aria-label="ESP32-S3 主控卡通示意"></div>
+            <div class="hardware-node-copy">
+              <div class="hardware-node-name">ESP32-S3 主控</div>
+              <div id="hwEsp32" class="hardware-state unknown"><i></i><span>同步中</span></div>
+              <div id="hwEsp32Detail" class="hardware-detail">USB 5V 独立供电</div>
+            </div>
           </div>
-
-          <div class="hardware-item">
-            <div class="hardware-item-name">土壤传感器</div>
-            <div id="hwSensor" class="hardware-state unknown"><i></i><span>同步中</span></div>
-            <div id="hwSensorDetail" class="hardware-detail">等待数据</div>
+          <div class="hardware-node node-tank" id="nodeWaterPath">
+            <div class="hardware-art art-tank" role="img" aria-label="储水箱卡通示意"></div>
+            <div class="hardware-node-copy">
+              <div class="hardware-node-name">储水箱</div>
+              <div id="hwWaterPath" class="hardware-state unmonitored"><i></i><span>未独立监测</span></div>
+              <div id="hwWaterPathDetail" class="hardware-detail">水位 / 流量未监测</div>
+            </div>
           </div>
-
-          <div class="hardware-item">
-            <div class="hardware-item-name">MOSFET</div>
-            <div id="hwMosfet" class="hardware-state unknown"><i></i><span>同步中</span></div>
-            <div id="hwMosfetDetail" class="hardware-detail">GPIO 控制状态</div>
+          <div class="hardware-node node-switch" id="nodeMosfet">
+            <div class="hardware-art art-switch" role="img" aria-label="MOSFET 开关卡通示意"></div>
+            <div class="hardware-node-copy">
+              <div class="hardware-node-name">MOSFET 开关</div>
+              <div id="hwMosfet" class="hardware-state unknown"><i></i><span>同步中</span></div>
+              <div id="hwMosfetDetail" class="hardware-detail">等待控制状态</div>
+            </div>
           </div>
-
-          <div class="hardware-item">
-            <div class="hardware-item-name">24V 自吸泵</div>
-            <div id="hwPump" class="hardware-state unknown"><i></i><span>同步中</span></div>
-            <div id="hwPumpDetail" class="hardware-detail">无流量反馈</div>
+          <div class="hardware-node node-pump" id="nodePump">
+            <div class="hardware-art art-pump" role="img" aria-label="24V 自吸泵卡通示意"></div>
+            <div class="hardware-node-copy">
+              <div class="hardware-node-name">24V 自吸泵</div>
+              <div id="hwPump" class="hardware-state unknown"><i></i><span>同步中</span></div>
+              <div id="hwPumpDetail" class="hardware-detail">等待控制状态</div>
+            </div>
           </div>
-
-          <div class="hardware-item">
-            <div class="hardware-item-name">24V 电源</div>
-            <div id="hwPower" class="hardware-state unmonitored"><i></i><span>未独立监测</span></div>
-            <div class="hardware-detail">未接电压/电流反馈</div>
-          </div>
-
-          <div class="hardware-item">
-            <div class="hardware-item-name">水箱 / 水路</div>
-            <div id="hwWaterPath" class="hardware-state unmonitored"><i></i><span>未独立监测</span></div>
-            <div class="hardware-detail">未接水位/流量传感器</div>
+          <div class="hardware-node node-power" id="nodePower">
+            <div class="hardware-art art-power" role="img" aria-label="24V 电源卡通示意"></div>
+            <div class="hardware-node-copy">
+              <div class="hardware-node-name">24V 电源</div>
+              <div id="hwPower" class="hardware-state unmonitored"><i></i><span>未独立监测</span></div>
+              <div id="hwPowerDetail" class="hardware-detail">电压 / 电流未监测</div>
+            </div>
           </div>
         </div>
+        <div class="hardware-legend"><span class="legend-signal">采样 / 控制</span><span class="legend-power">24V 供电链路</span><span class="legend-water">水路 · 动效为指令示意</span></div>
+        <p class="hardware-note">图示不作为接线图。主控由 USB 5V 独立供电；未配置水位、流量和电源反馈，运行指令不代表已确认出水。</p>
       </div>
     </section>
 
@@ -165,6 +177,6 @@
     </section>
   </main>
 
-  <script type="module" src="/app.js"></script>
+  <script type="module" src="/app.js?v=hardware-v2"></script>
 </body>
 </html>

@@ -244,6 +244,8 @@ function renderRealtimeTick(){
 function setHardwareState(el, text, stateClass){
   if(!el) return;
   el.className = `hardware-state ${stateClass}`;
+  const node = el.closest(".hardware-node");
+  if(node) node.dataset.state = stateClass;
   const label = el.querySelector("span");
   if(label) label.textContent = text;
 }
@@ -251,6 +253,22 @@ function setHardwareState(el, text, stateClass){
 function renderHardwareStatus(d, result = latestStatusResult){
   const stale = Boolean(result?.stale) || currentStatusAgeSeconds() > 90;
   const online = Boolean(d?.online) && !stale;
+  const age = currentStatusAgeSeconds();
+  const fault = d?.state === "pump_fault";
+  const driving = online && !fault && (d?.pump === true || d?.state === "pumping");
+  const scene = $("hardwareScene");
+  const stage = $("hardwareStage");
+  const mode = !d ? "unknown" : !online ? "offline" : fault ? "fault" : driving ? "pumping" : d.state === "soaking" ? "soaking" : "idle";
+  if(scene) scene.dataset.mode = mode;
+  if(stage){
+    const countdown = Number(driving ? d?.countdown : d?.intervalRemaining);
+    const remaining = Number.isFinite(countdown) ? Math.max(0, Math.ceil(countdown - age)) : null;
+    stage.textContent = !d ? "暂无设备数据 · 等待同步" : !online ? "设备离线或数据过期 · 运行状态无法确认" : fault ? "控制系统报告故障 · 请检查设备" : driving
+      ? `浇水指令执行中 · ${remaining > 0 ? `预计剩余 ${remaining} 秒` : "等待设备确认结束"}`
+      : d.state === "soaking" ? `渗透复测 · ${remaining > 0 ? `约 ${remaining} 秒后复测` : "等待设备复测结果"}`
+      : d.auto ? "自动监测中 · 等待浇水条件" : "手动模式 · 设备待机";
+  }
+
 
   if(ui.hardwareLiveBadge){
     ui.hardwareLiveBadge.className = `hardware-live-badge ${online ? "online" : "offline"}`;
@@ -276,19 +294,18 @@ function renderHardwareStatus(d, result = latestStatusResult){
   }
 
   if(d.sensorValid){
-    setHardwareState(ui.hwSensor, "正常", "ok");
+    setHardwareState(ui.hwSensor, `${d.moisture ?? "--"}%`, "ok");
     if(ui.hwSensorDetail){
-      ui.hwSensorDetail.textContent = `土壤 ${d.moisture ?? "--"}% · RAW ${d.raw ?? "--"}`;
+      ui.hwSensorDetail.textContent = `RAW ${d.raw ?? "--"} · 采样有效`;
     }
   }else{
     setHardwareState(ui.hwSensor, "异常", "warn");
     if(ui.hwSensorDetail) ui.hwSensorDetail.textContent = "传感器数据无效";
   }
 
-  const driving = Boolean(d.pump) || d.state === "pumping";
-  setHardwareState(ui.hwMosfet, driving ? "驱动中" : "待机", driving ? "active" : "ok");
+  setHardwareState(ui.hwMosfet, fault ? "状态待确认" : driving ? "输出 ON" : "输出 OFF", fault ? "error" : driving ? "active" : "ok");
   if(ui.hwMosfetDetail){
-    ui.hwMosfetDetail.textContent = driving ? "GPIO 控制输出为 ON" : "GPIO 控制输出为 OFF";
+    ui.hwMosfetDetail.textContent = fault ? "控制系统报告故障" : "依据设备控制状态上报";
   }
 
   if(d.state === "pump_fault"){
@@ -298,8 +315,8 @@ function renderHardwareStatus(d, result = latestStatusResult){
     setHardwareState(ui.hwPump, driving ? "运行指令" : "待机", driving ? "active" : "ok");
     if(ui.hwPumpDetail){
       ui.hwPumpDetail.textContent = driving
-        ? "已下发运行指令 · 无流量反馈"
-        : "未下发运行指令 · 无流量反馈";
+        ? "指令已上报 · 未确认出水"
+        : d.state === "soaking" ? "停泵渗透 · 等待复测" : "停止指令 · 无流量反馈";
     }
   }
 

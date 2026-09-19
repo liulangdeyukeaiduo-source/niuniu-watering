@@ -74,36 +74,50 @@ button:disabled{opacity:.42;cursor:not-allowed}
 .event-status{font-size:10px;padding:4px 7px;border-radius:999px;background:var(--gray);height:fit-content;white-space:nowrap}
 .empty{padding:16px 0 8px;text-align:center;font-size:11px;color:var(--muted)}
 
-/* hardware overview */
-.hardware{padding:12px}
+/* Hardware map: live labels belong to their illustrated component. */
+.hardware{padding:14px}
 .hardware-head{align-items:flex-start}
-.hardware-live-badge{height:27px;padding:0 9px;border-radius:999px;background:#eef2ee;color:#657067;font-size:10px;font-weight:750;display:inline-flex;align-items:center;white-space:nowrap}
+.hardware-live-badge{padding:6px 10px;border-radius:999px;background:#eef2ee;color:#657067;font-size:11px;white-space:nowrap}
 .hardware-live-badge.online{background:#e2f2e4;color:#2b6e35}
 .hardware-live-badge.offline{background:#f5e4e1;color:#995347}
-.hardware-layout{margin-top:10px;display:grid;gap:10px}
-.hardware-figure{margin:0;min-width:0}
-.hardware-image-wrap{position:relative;border:1px solid #e7ece6;border-radius:15px;overflow:hidden;background:#fafcf9}
-.hardware-image-wrap img{display:block;width:100%;height:auto;aspect-ratio:4/3;object-fit:cover}
-.hardware-image-tag{position:absolute;z-index:2;top:8px;left:8px;padding:5px 8px;border-radius:999px;background:rgba(255,255,255,.88);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);box-shadow:0 2px 9px rgba(43,61,47,.08);font-size:9px;font-weight:750;color:#5d695f}
-.hardware-figure figcaption{margin-top:6px;font-size:9px;line-height:1.5;color:#969e97}
-.hardware-status-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
-.hardware-item{min-width:0;padding:10px;border:1px solid #e8ece7;border-radius:13px;background:#fafbf9}
-.hardware-item-name{font-size:10.5px;font-weight:750;color:#465149;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hardware-state{margin-top:6px;display:inline-flex;align-items:center;gap:5px;max-width:100%;font-size:11px;font-weight:800;color:#5e6961}
-.hardware-state i{width:7px;height:7px;flex:0 0 auto;border-radius:50%;background:#9da59f}
-.hardware-state span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hardware-state.ok{color:#31723c}
-.hardware-state.ok i{background:#58a663;box-shadow:0 0 0 3px rgba(88,166,99,.10)}
-.hardware-state.active{color:#31723c}
-.hardware-state.active i{background:#43a85d;animation:hardwarePulse 1s ease-out infinite}
-.hardware-state.warn{color:#8b6b28}
-.hardware-state.warn i{background:#d8a445}
-.hardware-state.error{color:#9a4d43}
-.hardware-state.error i{background:#c86558}
-.hardware-state.unmonitored{color:#858d87}
-.hardware-state.unmonitored i{background:#aeb5b0}
-.hardware-detail{margin-top:3px;font-size:9px;line-height:1.35;color:#9aa19b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-@keyframes hardwarePulse{0%{box-shadow:0 0 0 0 rgba(67,168,93,.28)}70%{box-shadow:0 0 0 6px rgba(67,168,93,0)}100%{box-shadow:0 0 0 0 rgba(67,168,93,0)}}
+.hardware-scene{margin-top:12px;border-radius:16px;background:#f7faf7;border:1px solid #e6ede5;overflow:hidden}
+.hardware-stage{padding:12px 16px;font-size:13px;font-weight:700;border-bottom:1px solid #e6ede5;background:#eef4ec;color:#41604a;min-height:42px}
+.hardware-map{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:28px 38px;padding:18px 22px 18px 36px}
+.hardware-links{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.hardware-links path{fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.signal-link{stroke:#b1c9ac;stroke-dasharray:4 6}
+.power-link{stroke:#d6bc8e}
+.water-link{stroke:#c6dce3;stroke-width:5!important}
+.water-flow{stroke:#369eb6;stroke-dasharray:5 13;opacity:0}
+.hardware-node{position:relative;min-width:0;border-radius:14px;background:#fff;padding:10px 8px 12px;text-align:center;border:1px solid #e4eae1;transition:border-color .2s,box-shadow .2s}
+.hardware-art{width:100%;max-width:160px;aspect-ratio:1.1;margin:0 auto 6px;background-image:url('/hardware-parts-v2.webp');background-size:300% 200%;background-repeat:no-repeat;mix-blend-mode:multiply}
+.art-controller,.art-switch,.art-pump{background-size:300% 222.6%}
+.art-sensor,.art-tank,.art-power{background-size:300% 181.56%}
+.art-controller{background-position:0 0}.art-switch{background-position:50% 0}.art-pump{background-position:100% 0}
+.art-sensor{background-position:0 100%}.art-tank{background-position:50% 100%}.art-power{background-position:100% 100%}
+.hardware-node-name{font-size:12px;font-weight:750;color:#3e5143;line-height:1.5}
+.hardware-state{display:inline-flex;align-items:center;justify-content:center;gap:5px;margin-top:5px;font-size:12px;font-weight:700;line-height:1.5;color:#7a827d}
+.hardware-state i{width:7px;height:7px;flex:none;border-radius:50%;background:currentColor}
+.hardware-state.ok{color:#427b4d}.hardware-state.active{color:#197c8c}.hardware-state.warn{color:#a27620}.hardware-state.error{color:#ab5e51}.hardware-state.unmonitored{color:#8a918a;font-size:11px}
+.hardware-detail{font-size:10px;line-height:1.5;margin-top:4px;color:#7b867e;min-height:15px;overflow-wrap:anywhere}
+.hardware-node[data-state="active"]{border-color:#79b6b7;box-shadow:0 0 0 3px #3196a012}
+.hardware-node[data-state="error"]{border-color:#dab5ac}
+.hardware-node[data-state="warn"]{border-color:#deca95}
+.hardware-scene[data-mode="pumping"] .water-flow{opacity:1;animation:hardwareFlow 1.4s linear infinite}
+.hardware-scene[data-mode="pumping"] .node-pump .hardware-art{animation:hardwareBreathe 1.5s ease-in-out infinite}
+.hardware-scene[data-mode="pumping"] .hardware-stage{background:#e6f3f4;color:#246777}
+.hardware-scene[data-mode="soaking"] .hardware-stage{background:#f0edf7;color:#706084}
+.hardware-scene[data-mode="offline"] .hardware-stage,.hardware-scene[data-mode="fault"] .hardware-stage{background:#f7eeeb;color:#976150}
+.hardware-scene[data-mode="offline"] .hardware-art{filter:saturate(.35);opacity:.7}
+.hardware-legend{display:flex;justify-content:center;flex-wrap:wrap;gap:8px 16px;padding:10px 12px;font-size:10px;color:#728177;border-top:1px solid #e6ede5}
+.hardware-legend span:before{content:"";display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:5px;border-radius:3px;background:#b1c9ac}
+.hardware-legend .legend-power:before{background:#d6bc8e}.hardware-legend .legend-water:before{background:#73b7c8}
+.hardware-note{margin:0;padding:0 14px 12px;font-size:10px;line-height:1.6;color:#89948b}
+@keyframes hardwareFlow{to{stroke-dashoffset:-36}}
+@keyframes hardwareBreathe{50%{transform:translateY(-2px)}}
+@media(min-width:700px){.hardware-node{display:flex;align-items:center;text-align:left;padding:12px;gap:12px}.hardware-art{width:45%;margin:0;flex-shrink:0}.hardware-node-copy{min-width:0}.hardware-node-name{font-size:14px}.hardware-detail{font-size:11px}.hardware-state{font-size:13px}}
+@media(prefers-reduced-motion:reduce){.hardware-scene *{animation:none!important;transition:none!important}}
+
 
 /* trend */
 .trend-head{align-items:flex-start}
@@ -206,12 +220,6 @@ body.watering-active .hero-hint{color:#376d42}
   .trend{grid-area:trend;padding:16px}
   .events{grid-area:events}
   .hardware{grid-area:hardware;padding:16px}
-  .hardware-layout{grid-template-columns:minmax(0,1.25fr) minmax(340px,.75fr);gap:14px;align-items:start}
-  .hardware-status-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
-  .hardware-item{padding:12px}
-  .hardware-item-name{font-size:11.5px}
-  .hardware-state{font-size:12px}
-  .hardware-detail{font-size:9.5px}
   .trend-svg{min-height:470px}
   .trend .section-title{font-size:15px}
   .trend .section-sub{font-size:12px}
@@ -232,8 +240,6 @@ body.watering-active .hero-hint{color:#376d42}
   .app{display:flex;width:100%;max-width:560px;overflow-x:hidden}
   .trend{min-width:0;overflow:hidden}
   .hardware{min-width:0;overflow:hidden}
-  .hardware-image-wrap{border-radius:13px}
-  .hardware-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .trend-head{gap:8px}
   .trend-head>div{min-width:0}
   .trend-toolbar{display:flex;flex-direction:column;align-items:stretch;gap:7px}
