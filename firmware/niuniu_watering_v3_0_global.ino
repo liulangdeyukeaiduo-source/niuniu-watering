@@ -238,9 +238,14 @@ void checkDailyReset() {
   }
 }
 
-// Forward declaration: sensor fault during pumping must use the normal
-// stop/event lifecycle instead of silently switching the GPIO off.
+// Forward declarations.
+// Sensor fault during pumping must use the normal stop/event lifecycle.
 void stopPumpAndSoak(const char* result);
+
+// V3.2 environment handler calls publishStatus() before its implementation.
+// Declare it explicitly because Arduino's automatic prototype generation is
+// not reliable enough for this ordering.
+void publishStatus(bool historySample = false);
 
 // ============================================================
 // 10. Soil sensor
@@ -444,7 +449,7 @@ void pumpHardwareOffNoEvent() {
 // ============================================================
 // 13. MQTT payloads
 // ============================================================
-void publishStatus(bool historySample = false) {
+void publishStatus(bool historySample) {
   if (!mqtt.connected()) return;
 
   char payload[1200];
