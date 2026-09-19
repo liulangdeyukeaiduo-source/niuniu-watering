@@ -27,9 +27,24 @@ h1{font-size:22px;line-height:1.1;margin:4px 0 0}
 .dot.ok{background:#58a663}
 .dot.warn{background:#d4a343}
 .hero-main{margin-top:16px;display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
-.moisture{font-size:58px;font-weight:850;line-height:.88;letter-spacing:-3px}
+.moisture{font-size:58px;font-weight:850;line-height:.88;letter-spacing:-3px;transform-origin:left center}
+.moisture.changed{animation:moisturePulse .36s ease}
+@keyframes moisturePulse{0%{transform:scale(1);opacity:1}45%{transform:scale(1.035);opacity:.72}100%{transform:scale(1);opacity:1}}
 .muted,.section-sub{font-size:11px;color:var(--muted)}
 .hero-hint{max-width:48%;font-size:12px;line-height:1.5;color:var(--muted);text-align:right}
+.live-strip{margin-top:12px;min-height:34px;padding:8px 10px;border-radius:11px;background:#f3f6f2;color:#566259;font-size:11px;line-height:1.45;display:flex;align-items:center;gap:7px;transition:background .25s ease,color .25s ease,border-color .25s ease}
+.live-strip::before{content:"";width:7px;height:7px;border-radius:50%;background:#7aa180;box-shadow:0 0 0 0 rgba(90,145,101,.25);flex:0 0 auto}
+.live-strip.monitoring::before{animation:livePulse 1.8s ease-out infinite}
+.live-strip.watering{background:#edf7ef;color:#2f693a}
+.live-strip.watering::before{background:#56a66a;animation:livePulse 1s ease-out infinite}
+.live-strip.soaking{background:#f3f6f7;color:#4c6770}
+.live-strip.soaking::before{background:#6e98a5;animation:livePulse 1.5s ease-out infinite}
+.live-strip.assist{background:#f7f3fa;color:#705789}
+.live-strip.assist::before{background:#8a6eaa;animation:livePulse 1.5s ease-out infinite}
+.live-strip.offline,.live-strip.stale{background:#f7f2f1;color:#8a5d55}
+.live-strip.offline::before,.live-strip.stale::before{background:#b56b5c;animation:none}
+.live-strip.syncing::before{background:#9aa39c;animation:livePulse 1.5s ease-out infinite}
+@keyframes livePulse{0%{box-shadow:0 0 0 0 rgba(90,145,101,.28)}70%{box-shadow:0 0 0 6px rgba(90,145,101,0)}100%{box-shadow:0 0 0 0 rgba(90,145,101,0)}}
 .status-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
 .mini{padding:10px 5px;text-align:center;min-width:0}
 .mini .k{font-size:10px;color:var(--muted)}
