@@ -21,7 +21,7 @@
     - Every manual/automatic watering action runs 60 s; soak/verify waits 90 s.
     - Auto mode is OFF after reboot.
     - MQTT uses TLS port 8883. Per current project decision, CA verification is disabled.
-    - No direct HTTP history upload. One MQTT status per minute is marked historySample=true;
+    - No direct HTTP history upload. One MQTT status every 30 seconds is marked historySample=true;
       Worker persists that point to D1 soil_history.
 */
 
@@ -92,7 +92,7 @@ constexpr uint32_t PUMP_OFF_CONFIRM_DELAY_MS = 150UL;
 // ============================================================
 constexpr uint32_t SENSOR_SAMPLE_MS       = 3000UL;
 constexpr uint32_t STATUS_PUBLISH_MS      = 10000UL;
-constexpr uint32_t HISTORY_SAMPLE_MS      = 60000UL;
+constexpr uint32_t HISTORY_SAMPLE_MS      = 30000UL;
 constexpr uint32_t WIFI_RETRY_MS          = 10000UL;
 constexpr uint32_t MQTT_RETRY_MS          = 5000UL;
 
