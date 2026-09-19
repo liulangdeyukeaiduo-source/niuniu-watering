@@ -13,6 +13,14 @@ const COMMANDS = new Set([
   "test_reset",
 ]);
 
+const WEATHER = {
+  latitude: 22.2707,
+  longitude: 113.5665,
+  location: "珠海市香洲区",
+  source: "open-meteo",
+  minRefreshMs: 25 * 60 * 1000,
+};
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -27,7 +35,9 @@ export default {
           webhookConfigured: Boolean(env.EMQX_WEBHOOK_TOKEN),
           accessAuthenticated: hasAccessIdentity(request),
           commandProtected: env.REQUIRE_ACCESS !== "true" || hasAccessIdentity(request),
-          build: "2026-09-19-esp32-v3.1-production",
+          build: "2026-09-19-weather-cron-v1",
+          weatherSource: WEATHER.source,
+          weatherLocation: WEATHER.location,
           ts: Math.floor(Date.now() / 1000),
         });
       }
@@ -69,6 +79,16 @@ export default {
         message: error instanceof Error ? error.message : String(error),
       }, 500);
     }
+  },
+
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(
+      refreshWeather(env).catch((error) => {
+        console.error("scheduled_weather_refresh_failed", {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      })
+    );
   },
 };
 
@@ -192,6 +212,15 @@ async function getWateringEvents(url, env) {
 }
 
 async function getHistory(url, env) {
+  let weatherRefresh = null;
+  try {
+    weatherRefresh = await refreshWeather(env);
+  } catch (error) {
+    console.warn("history_weather_refresh_failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+
   const days = clampInt(url.searchParams.get("days"), 1, 30, 7);
   const sinceSeconds = Math.floor(Date.now() / 1000) - days * 86400;
   const sinceMillis = sinceSeconds * 1000;
@@ -233,7 +262,101 @@ async function getHistory(url, env) {
     soil: soilResult.results || [],
     weather: weatherResult.results || [],
     watering: wateringResult.results || [],
+    weatherMeta: {
+      source: WEATHER.source,
+      location: WEATHER.location,
+      refresh: weatherRefresh,
+    },
   });
+}
+
+async function refreshWeather(env, { force = false } = {}) {
+  const now = Date.now();
+
+  let latestTs = 0;
+  try {
+    const latest = await env.DB.prepare(
+      `SELECT ts
+       FROM weather_history
+       ORDER BY ts DESC
+       LIMIT 1`
+    ).first();
+    latestTs = Number(latest?.ts || 0);
+  } catch (error) {
+    if (!isMissingTableError(error, "weather_history")) throw error;
+    console.warn("weather_history_missing_skip_refresh");
+    return {
+      ok: false,
+      skipped: true,
+      reason: "weather_history_missing",
+      lastTs: 0,
+    };
+  }
+
+  if (!force && latestTs > 0 && now - latestTs < WEATHER.minRefreshMs) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: "fresh",
+      lastTs: latestTs,
+    };
+  }
+
+  const endpoint = new URL("https://api.open-meteo.com/v1/forecast");
+  endpoint.searchParams.set("latitude", String(WEATHER.latitude));
+  endpoint.searchParams.set("longitude", String(WEATHER.longitude));
+  endpoint.searchParams.set("current", "temperature_2m,relative_humidity_2m");
+  endpoint.searchParams.set("timezone", "Asia/Shanghai");
+
+  const response = await fetch(endpoint.toString(), {
+    headers: {
+      "accept": "application/json",
+      "user-agent": "niuniu-watering-v3/1.0",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Open-Meteo HTTP ${response.status}`);
+  }
+
+  const payload = await response.json();
+  const temperature = Number(payload?.current?.temperature_2m);
+  const humidity = Number(payload?.current?.relative_humidity_2m);
+
+  if (!Number.isFinite(temperature) || !Number.isFinite(humidity)) {
+    throw new Error("Open-Meteo returned invalid current weather");
+  }
+
+  const sampleTs = Date.now();
+
+  await env.DB.prepare(
+    `INSERT INTO weather_history
+      (ts, temperature_c, humidity_pct, location, source)
+     VALUES (?1, ?2, ?3, ?4, ?5)`
+  ).bind(
+    sampleTs,
+    temperature,
+    humidity,
+    WEATHER.location,
+    WEATHER.source
+  ).run();
+
+  console.log("weather_sample_stored", {
+    ts: sampleTs,
+    temperature,
+    humidity,
+    location: WEATHER.location,
+  });
+
+  return {
+    ok: true,
+    skipped: false,
+    ts: sampleTs,
+    temperature,
+    humidity,
+    location: WEATHER.location,
+    source: WEATHER.source,
+  };
 }
 
 async function sendCommand(request, env) {
