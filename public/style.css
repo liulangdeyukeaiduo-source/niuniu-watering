@@ -220,6 +220,8 @@ body.watering-active .hero-hint{color:#376d42}
   .trend{grid-area:trend;padding:16px}
   .events{grid-area:events}
   .hardware{grid-area:hardware;padding:16px}
+  .hardware-map{padding:20px 36px;gap:32px 44px}
+  .hardware-links{overflow:visible}
   .trend-svg{min-height:470px}
   .trend .section-title{font-size:15px}
   .trend .section-sub{font-size:12px}
