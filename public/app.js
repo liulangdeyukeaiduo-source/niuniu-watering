@@ -250,6 +250,96 @@ function setHardwareState(el, text, stateClass){
   if(label) label.textContent = text;
 }
 
+const HARDWARE_MOBILE_PATHS = {
+  signal: "M180 100 H420 M450 100 V330",
+  power: "M450 560 V330 H300 V560 H180",
+  water: "M150 330 V560 H24 V100 H150",
+};
+
+let hardwareLinkFrame = 0;
+
+function scheduleHardwareLinks(){
+  if(hardwareLinkFrame) cancelAnimationFrame(hardwareLinkFrame);
+  hardwareLinkFrame = requestAnimationFrame(()=>{
+    hardwareLinkFrame = 0;
+    updateHardwareLinks();
+  });
+}
+
+function updateHardwareLinks(){
+  const map = document.querySelector(".hardware-map");
+  const svg = $("hardwareLinks");
+  const signal = $("hardwareSignalLink");
+  const power = $("hardwarePowerLink");
+  const water = $("hardwareWaterLink");
+  const flow = $("hardwareWaterFlow");
+  if(!map || !svg || !signal || !power || !water || !flow) return;
+
+  // Keep the phone layout exactly as before.
+  if(!window.matchMedia("(min-width: 768px)").matches){
+    svg.setAttribute("viewBox", "0 0 600 660");
+    signal.setAttribute("d", HARDWARE_MOBILE_PATHS.signal);
+    power.setAttribute("d", HARDWARE_MOBILE_PATHS.power);
+    water.setAttribute("d", HARDWARE_MOBILE_PATHS.water);
+    flow.setAttribute("d", HARDWARE_MOBILE_PATHS.water);
+    return;
+  }
+
+  const mapRect = map.getBoundingClientRect();
+  if(mapRect.width < 1 || mapRect.height < 1) return;
+  svg.setAttribute("viewBox", `0 0 ${mapRect.width} ${mapRect.height}`);
+
+  const rel = (id)=>{
+    const el = $(id);
+    if(!el) return null;
+    const r = el.getBoundingClientRect();
+    return {
+      left:r.left-mapRect.left,
+      right:r.right-mapRect.left,
+      top:r.top-mapRect.top,
+      bottom:r.bottom-mapRect.top,
+      cx:(r.left+r.right)/2-mapRect.left,
+      cy:(r.top+r.bottom)/2-mapRect.top,
+    };
+  };
+
+  const sensor = rel("nodeSensor");
+  const controller = rel("nodeEsp32");
+  const tank = rel("nodeWaterPath");
+  const mosfet = rel("nodeMosfet");
+  const pump = rel("nodePump");
+  const supply = rel("nodePower");
+  if(!sensor || !controller || !tank || !mosfet || !pump || !supply) return;
+
+  const fmt = (n)=>Number(n.toFixed(1));
+  const midColumn = fmt((sensor.right + controller.left) / 2);
+  const outerLeft = fmt(Math.max(10, Math.min(sensor.left, tank.left, pump.left) - 18));
+
+  // Sampling/control: sensor -> ESP32, ESP32 -> MOSFET.
+  const signalD = [
+    `M ${fmt(sensor.right)} ${fmt(sensor.cy)} H ${fmt(controller.left)}`,
+    `M ${fmt(controller.cx)} ${fmt(controller.bottom)} V ${fmt(mosfet.top)}`,
+  ].join(" ");
+
+  // 24V chain: power -> MOSFET -> pump. The cross-column segment stays in the center gutter.
+  const powerD = [
+    `M ${fmt(supply.cx)} ${fmt(supply.top)} V ${fmt(mosfet.bottom)}`,
+    `M ${fmt(mosfet.left)} ${fmt(mosfet.cy)} H ${midColumn} V ${fmt(pump.cy)} H ${fmt(pump.right)}`,
+  ].join(" ");
+
+  // Water path: tank -> pump -> plant. Route the return leg through the left gutter,
+  // so it never cuts through a card at wide desktop aspect ratios.
+  const waterD = [
+    `M ${fmt(tank.cx)} ${fmt(tank.bottom)} V ${fmt(pump.top)}`,
+    `M ${fmt(pump.left)} ${fmt(pump.cy)} H ${outerLeft} V ${fmt(sensor.cy)} H ${fmt(sensor.left)}`,
+  ].join(" ");
+
+  signal.setAttribute("d", signalD);
+  power.setAttribute("d", powerD);
+  water.setAttribute("d", waterD);
+  flow.setAttribute("d", waterD);
+}
+
 function renderHardwareStatus(d, result = latestStatusResult){
   const stale = Boolean(result?.stale) || currentStatusAgeSeconds() > 90;
   const online = Boolean(d?.online) && !stale;
@@ -260,6 +350,7 @@ function renderHardwareStatus(d, result = latestStatusResult){
   const stage = $("hardwareStage");
   const mode = !d ? "unknown" : !online ? "offline" : fault ? "fault" : driving ? "pumping" : d.state === "soaking" ? "soaking" : "idle";
   if(scene) scene.dataset.mode = mode;
+  scheduleHardwareLinks();
   if(stage){
     const countdown = Number(driving ? d?.countdown : d?.intervalRemaining);
     const remaining = Number.isFinite(countdown) ? Math.max(0, Math.ceil(countdown - age)) : null;
@@ -1097,6 +1188,7 @@ ui.trendBox.addEventListener("pointercancel",finishTrendPan);
 
 window.addEventListener("resize",()=>{
   hideTrendTooltip();
+  scheduleHardwareLinks();
 });
 
 async function refreshAll(){
@@ -1158,4 +1250,5 @@ document.addEventListener("visibilitychange", async ()=>{
 
 await Promise.all([refreshAll(), loadHistory()]);
 renderRealtimeTick();
+scheduleHardwareLinks();
 startPolling();
