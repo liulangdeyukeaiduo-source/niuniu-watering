@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#f4f7f2">
   <title>妞妞的小花园</title>
-  <link rel="stylesheet" href="/style.css?v=hardware-v2">
+  <link rel="stylesheet" href="/style.css?v=hardware-v3">
 </head>
 <body>
   <main class="app">
@@ -65,11 +65,11 @@
       <div id="hardwareScene" class="hardware-scene" data-mode="unknown">
         <div class="hardware-stage" id="hardwareStage">正在同步设备状态</div>
         <div class="hardware-map">
-          <svg class="hardware-links" viewBox="0 0 600 660" preserveAspectRatio="none" aria-hidden="true">
-            <path class="signal-link" d="M180 100 H420 M450 100 V330"/>
-            <path class="power-link" d="M450 560 V330 H300 V560 H180"/>
-            <path class="water-link" d="M150 330 V560 H24 V100 H150"/>
-            <path class="water-flow" d="M150 330 V560 H24 V100 H150"/>
+          <svg id="hardwareLinks" class="hardware-links" viewBox="0 0 600 660" preserveAspectRatio="none" aria-hidden="true">
+            <path id="hardwareSignalLink" class="signal-link" d="M180 100 H420 M450 100 V330"/>
+            <path id="hardwarePowerLink" class="power-link" d="M450 560 V330 H300 V560 H180"/>
+            <path id="hardwareWaterLink" class="water-link" d="M150 330 V560 H24 V100 H150"/>
+            <path id="hardwareWaterFlow" class="water-flow" d="M150 330 V560 H24 V100 H150"/>
           </svg>
           <div class="hardware-node node-sensor" id="nodeSensor">
             <div class="hardware-art art-sensor" role="img" aria-label="花盆 · 土壤探头卡通示意"></div>
@@ -177,6 +177,6 @@
     </section>
   </main>
 
-  <script type="module" src="/app.js?v=hardware-v2"></script>
+  <script type="module" src="/app.js?v=hardware-v3"></script>
 </body>
 </html>
