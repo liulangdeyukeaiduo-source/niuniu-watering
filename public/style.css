@@ -164,6 +164,9 @@ button:disabled{opacity:.42;cursor:not-allowed}
 .watering-dot.manual{fill:#739eaa}
 .watering-dot-highlight{pointer-events:none;fill:rgba(255,255,255,.78)}
 .trend-hit{pointer-events:all;cursor:crosshair}
+.trend-select-band{position:absolute;display:none;z-index:6;pointer-events:none;background:rgba(79,138,85,.12);border:1px solid rgba(79,138,85,.58);box-shadow:inset 0 0 0 1px rgba(255,255,255,.55);border-radius:4px}
+.trend-select-band.active{display:block}
+.trend-box.selecting .trend-hit{cursor:col-resize}
 .hover-line{stroke:#59675d;stroke-width:1;stroke-dasharray:3 3;opacity:.78;pointer-events:none}
 .hover-point{stroke:#fff;stroke-width:1.5;pointer-events:none}
 .hover-point.soil{fill:#4f8a55}
