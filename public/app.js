@@ -38,6 +38,8 @@ let lastRenderedMoisture = null;
 let statusRequestInFlight = false;
 let deltaRequestInFlight = false;
 let lastWeatherDeltaAt = 0;
+const TREND_SERIES_KEYS = ["soil","humidity","temp","vpd","watering"];
+const trendVisibility = {soil:true,humidity:true,temp:true,vpd:true,watering:true};
 
 function stateText(value){
   const map = {monitoring:"监测",pumping:"浇水",soaking:"渗透",locked:"闭锁",sensor_fault:"传感器故障",pump_fault:"水泵故障"};
@@ -730,38 +732,33 @@ function renderTrend(){
   }
 
   const wateringBands = [];
-  watering.slice(-60).forEach(e=>{
-    const realStartX = x(clamp(e.start, viewStart, viewEnd));
-    const realEndX = x(clamp(Math.max(e.end, e.start + 1000), viewStart, viewEnd));
-    const minimumWidth = 10;
-    let bandX = Math.min(realStartX, W-m.r-minimumWidth);
-    let bandW = Math.max(realEndX - realStartX, minimumWidth);
-    if(bandX + bandW > W-m.r) bandW = Math.max(3, W-m.r-bandX);
+  if(trendVisibility.watering){
+    watering.slice(-60).forEach(e=>{
+      const realStartX = x(clamp(e.start, viewStart, viewEnd));
+      const realEndX = x(clamp(Math.max(e.end, e.start + 1000), viewStart, viewEnd));
+      const realLeft = Math.min(realStartX, realEndX);
+      const realRight = Math.max(realStartX, realEndX);
+      const realWidth = Math.max(0, realRight - realLeft);
+      const minimumWidth = effectiveHours >= 72 ? 5 : effectiveHours >= 24 ? 4 : 3;
+      const bandW = Math.min(pw, Math.max(realWidth, minimumWidth));
+      const centerX = (realLeft + realRight) / 2;
+      const bandX = clamp(centerX - bandW / 2, m.l, W - m.r - bandW);
+      const kind = e.source === "AUTO" || e.source === "AUTO_VPD" ? "auto" : "manual";
 
-    const kind = e.source === "AUTO" || e.source === "AUTO_VPD" ? "auto" : "manual";
-    const fill = kind === "auto" ? "url(#wateringAutoGlow)" : "url(#wateringManualGlow)";
-    const centerX = bandX + bandW / 2;
-
-    const halo = appendSvg("rect",{
-      x:bandX,y:m.t,width:bandW,height:vpdBottom-m.t,
-      class:`watering-halo ${kind}`,fill,rx:Math.min(7, bandW/2)
+      const band = appendSvg("rect",{
+        x:bandX,y:m.t,width:bandW,height:vpdBottom-m.t,
+        class:`watering-band ${kind}`,rx:Math.min(3, bandW/2)
+      });
+      band.setAttribute("aria-label", `${sourceText(e.source)} ${timeText(e.start/1000)} 至 ${timeText(e.end/1000)}`);
+      wateringBands.push({...e, x1:bandX, x2:bandX+bandW});
     });
-    halo.setAttribute("aria-label", `${sourceText(e.source)} ${timeText(e.start/1000)}`);
-
-    appendSvg("line",{
-      x1:centerX,y1:m.t+8,x2:centerX,y2:vpdBottom-3,
-      class:`watering-focus-line ${kind}`
-    });
-    appendSvg("circle",{cx:centerX,cy:m.t+7,r:4.2,class:`watering-dot ${kind}`});
-    appendSvg("circle",{cx:centerX-1.2,cy:m.t+5.8,r:1.1,class:"watering-dot-highlight"});
-    wateringBands.push({...e, x1:bandX, x2:bandX+bandW});
-  });
+  }
 
   const dynamicMaxPoints = clamp(Math.round(480 * trendHours / Math.max(TREND_MIN_VIEW_HOURS,effectiveHours)), 480, 1800);
-  drawSeries(downsample(soil, dynamicMaxPoints), x, yPct, "series soil");
-  drawSeries(downsample(humidity, dynamicMaxPoints), x, yPct, "series humidity");
-  drawSeries(downsample(temp, dynamicMaxPoints), x, yTemp, "series temp");
-  drawSeries(downsample(vpd, dynamicMaxPoints), x, yVpd, "series vpd");
+  if(trendVisibility.soil) drawSeries(downsample(soil, dynamicMaxPoints), x, yPct, "series soil");
+  if(trendVisibility.humidity) drawSeries(downsample(humidity, dynamicMaxPoints), x, yPct, "series humidity");
+  if(trendVisibility.temp) drawSeries(downsample(temp, dynamicMaxPoints), x, yTemp, "series temp");
+  if(trendVisibility.vpd) drawSeries(downsample(vpd, dynamicMaxPoints), x, yVpd, "series vpd");
 
   const hoverLine = appendSvg("line",{x1:m.l,y1:m.t,x2:m.l,y2:vpdBottom,class:"hover-line hidden-svg"});
   const hoverSoil = appendSvg("circle",{cx:m.l,cy:m.t,r:4,class:"hover-point soil hidden-svg"});
@@ -902,11 +899,11 @@ function showTrendPointer(event){
   const ratio = (clampedX - model.m.l) / model.pw;
   const t = model.since + ratio * (model.now - model.since);
 
-  const soil = nearestPoint(model.soil, t);
-  const humidity = nearestPoint(model.humidity, t);
-  const temp = nearestPoint(model.temp, t);
-  const vpd = nearestPoint(model.vpd, t);
-  const watering = nearestWateringBand(model.wateringBands, clampedX);
+  const soil = trendVisibility.soil ? nearestPoint(model.soil, t) : null;
+  const humidity = trendVisibility.humidity ? nearestPoint(model.humidity, t) : null;
+  const temp = trendVisibility.temp ? nearestPoint(model.temp, t) : null;
+  const vpd = trendVisibility.vpd ? nearestPoint(model.vpd, t) : null;
+  const watering = trendVisibility.watering ? nearestWateringBand(model.wateringBands, clampedX) : null;
 
   model.hoverLine.setAttribute("x1", clampedX);
   model.hoverLine.setAttribute("x2", clampedX);
@@ -927,7 +924,9 @@ function showTrendPointer(event){
 
   if(watering){
     const seconds = Math.max(1, Math.round((watering.end-watering.start)/1000));
-    rows.push(`<div class="tip-watering">💧 ${escapeHtml(sourceText(watering.source))}<br><span>${escapeHtml(timeText(watering.start/1000))} · ${seconds}s</span></div>`);
+    const startText = formatTooltipTime(watering.start);
+    const endText = formatTooltipTime(watering.end);
+    rows.push(`<div class="tip-watering">💧 ${escapeHtml(sourceText(watering.source))}<br><span>${escapeHtml(startText)} → ${escapeHtml(endText)} · ${seconds}s</span></div>`);
   }
 
   ui.trendTooltip.innerHTML = rows.filter(Boolean).join("");
@@ -1093,6 +1092,39 @@ ui.statusBtn.addEventListener("click",()=>sendCommand("status"));
 ui.resetBtn.addEventListener("click",()=>{ if(confirm("确认将今日浇水次数复位为 0/3 吗？\n\n水泵运行或渗透复测期间不能复位。")) sendCommand("reset_daily"); });
 ui.refreshBtn.addEventListener("click",refreshAll);
 ui.trendRefreshBtn.addEventListener("click",loadHistory);
+
+function setupTrendLegend(){
+  document.querySelectorAll(".legend > span").forEach((item,index)=>{
+    const key = TREND_SERIES_KEYS[index];
+    if(!key) return;
+    item.dataset.series = key;
+    item.setAttribute("role","button");
+    item.setAttribute("tabindex","0");
+    item.setAttribute("aria-pressed","true");
+
+    const updateLabelState = ()=>{
+      const visible = trendVisibility[key];
+      item.classList.toggle("off", !visible);
+      item.setAttribute("aria-pressed", String(visible));
+      item.title = `点击${visible ? "隐藏" : "显示"}${item.textContent.trim()}`;
+    };
+
+    const toggle = ()=>{
+      trendVisibility[key] = !trendVisibility[key];
+      updateLabelState();
+      hideTrendTooltip();
+      renderTrend();
+    };
+
+    updateLabelState();
+    item.addEventListener("click", toggle);
+    item.addEventListener("keydown",(event)=>{
+      if(event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      toggle();
+    });
+  });
+}
 
 document.querySelectorAll(".range-btn").forEach(btn=>{
   btn.addEventListener("click",()=>{
@@ -1405,6 +1437,7 @@ document.addEventListener("visibilitychange", async ()=>{
   startPolling();
 });
 
+setupTrendLegend();
 await Promise.all([refreshAll(), loadHistory()]);
 renderRealtimeTick();
 scheduleHardwareLinks();
