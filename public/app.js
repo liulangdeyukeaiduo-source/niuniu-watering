@@ -27,6 +27,9 @@ let trendViewHours = 168;
 let trendEndOffsetHours = 0;
 let trendModel = null;
 let trendPan = null;
+let trendSelection = null;
+let trendSelectionEl = null;
+const TREND_MIN_VIEW_HOURS = 0.5;
 let eventsCache = [];
 let historyCursorMs = 0;
 let latestStatusResult = null;
@@ -591,7 +594,7 @@ async function loadHistoryDelta(){
 function renderTrend(){
   const dataNow = Date.now();
   const fullStart = dataNow - trendHours * 3600 * 1000;
-  trendViewHours = clamp(trendViewHours, 2, trendHours);
+  trendViewHours = clamp(trendViewHours, TREND_MIN_VIEW_HOURS, trendHours);
   trendEndOffsetHours = clamp(trendEndOffsetHours, 0, Math.max(0, trendHours - trendViewHours));
 
   const viewEnd = dataNow - trendEndOffsetHours * 3600 * 1000;
@@ -754,7 +757,7 @@ function renderTrend(){
     wateringBands.push({...e, x1:bandX, x2:bandX+bandW});
   });
 
-  const dynamicMaxPoints = clamp(Math.round(480 * trendHours / Math.max(2,effectiveHours)), 480, 1800);
+  const dynamicMaxPoints = clamp(Math.round(480 * trendHours / Math.max(TREND_MIN_VIEW_HOURS,effectiveHours)), 480, 1800);
   drawSeries(downsample(soil, dynamicMaxPoints), x, yPct, "series soil");
   drawSeries(downsample(humidity, dynamicMaxPoints), x, yPct, "series humidity");
   drawSeries(downsample(temp, dynamicMaxPoints), x, yTemp, "series temp");
@@ -789,13 +792,13 @@ function renderTrend(){
     ? `${rangeLabel}环境趋势 · 当前${viewLabel}视窗`
     : `${rangeLabel}环境趋势`;
 
-  ui.trendMeta.textContent = `${viewLabel}视窗 ｜ ${shown.join(" · ") || "暂无数据"} ｜ ${weatherInfo.text} ｜ 悬浮/轻触查看；放大后左右拖动平移`;
+  ui.trendMeta.textContent = `${viewLabel}视窗 ｜ ${shown.join(" · ") || "暂无数据"} ｜ ${weatherInfo.text} ｜ 电脑：左键框选放大，Shift+拖动平移；手机：轻触查看，放大后左右拖动`;
   ui.trendMeta.classList.toggle("warn", weatherInfo.stale);
 }
 
 function updateTrendControls(effectiveHours = trendViewHours){
   const fullyZoomedOut = trendViewHours >= trendHours - 0.01;
-  const fullyZoomedIn = trendViewHours <= 2.01;
+  const fullyZoomedIn = trendViewHours <= TREND_MIN_VIEW_HOURS + 0.01;
   ui.zoomOutBtn.disabled = fullyZoomedOut;
   ui.zoomInBtn.disabled = fullyZoomedIn;
   ui.zoomResetBtn.disabled = fullyZoomedOut && trendEndOffsetHours <= 0.01;
@@ -806,7 +809,7 @@ function updateTrendControls(effectiveHours = trendViewHours){
 
 function zoomTrend(factor){
   const oldHours = trendViewHours;
-  const newHours = clamp(oldHours * factor, 2, trendHours);
+  const newHours = clamp(oldHours * factor, TREND_MIN_VIEW_HOURS, trendHours);
   if(Math.abs(newHours-oldHours) < 0.01) return;
 
   const currentEndOffset = trendEndOffsetHours;
@@ -877,18 +880,18 @@ function normalizeWateringEvent(row){
 
 function bindTrendPointer(hit){
   hit.addEventListener("pointermove", (event)=>{
-    if(trendPan?.moved) return;
+    if(trendPan?.moved || trendSelection?.moved) return;
     showTrendPointer(event);
   });
   hit.addEventListener("pointerdown", showTrendPointer);
   hit.addEventListener("pointerleave", (event)=>{
-    if(event.pointerType !== "touch" && !trendPan) hideTrendTooltip();
+    if(event.pointerType !== "touch" && !trendPan && !trendSelection) hideTrendTooltip();
   });
 }
 
 function showTrendPointer(event){
   const model = trendModel;
-  if(!model || trendPan?.moved) return;
+  if(!model || trendPan?.moved || trendSelection?.moved) return;
   if(event.pointerType === "touch" && !event.isPrimary) return;
 
   const svgRect = ui.trendSvg.getBoundingClientRect();
@@ -1105,16 +1108,95 @@ ui.zoomInBtn.addEventListener("click",()=>zoomTrend(0.5));
 ui.zoomOutBtn.addEventListener("click",()=>zoomTrend(2));
 ui.zoomResetBtn.addEventListener("click",resetTrendView);
 
-// Pan the zoomed view without any new D1 query.
-// Mobile Safari safety:
-// - only the primary finger participates;
-// - do not capture on pointerdown;
-// - take over only after a clear horizontal gesture;
-// - vertical gestures stay available for normal page scrolling.
-ui.trendBox.addEventListener("pointerdown",(event)=>{
-  if(!trendModel || trendViewHours >= trendHours - 0.01) return;
-  if(event.pointerType === "touch" && !event.isPrimary) return;
+// Desktop:
+// - plain left-drag selects a time range and zooms into it;
+// - Shift + left-drag pans an already zoomed view.
+// Mobile:
+// - keep the existing horizontal pan gesture after zooming;
+// - vertical gestures remain available for normal page scrolling.
+function ensureTrendSelectionEl(){
+  if(trendSelectionEl) return trendSelectionEl;
+  trendSelectionEl = document.createElement("div");
+  trendSelectionEl.className = "trend-select-band";
+  ui.trendBox.appendChild(trendSelectionEl);
+  return trendSelectionEl;
+}
 
+function hideTrendSelectionBand(){
+  if(trendSelectionEl) trendSelectionEl.classList.remove("active");
+  ui.trendBox.classList.remove("selecting");
+}
+
+function trendPlotGeometry(){
+  const model = trendModel;
+  if(!model) return null;
+
+  const boxRect = ui.trendBox.getBoundingClientRect();
+  const svgRect = ui.trendSvg.getBoundingClientRect();
+  if(!boxRect.width || !svgRect.width || !svgRect.height) return null;
+
+  const scaleX = svgRect.width / model.W;
+  const scaleY = svgRect.height / model.H;
+
+  return {
+    boxRect,
+    left: svgRect.left - boxRect.left + model.m.l * scaleX,
+    right: svgRect.left - boxRect.left + (model.W - model.m.r) * scaleX,
+    top: svgRect.top - boxRect.top + model.m.t * scaleY,
+    bottom: svgRect.top - boxRect.top + model.vpdBottom * scaleY,
+  };
+}
+
+function pointInsideTrendPlot(event, geometry){
+  const x = event.clientX - geometry.boxRect.left;
+  const y = event.clientY - geometry.boxRect.top;
+  return x >= geometry.left && x <= geometry.right && y >= geometry.top && y <= geometry.bottom;
+}
+
+function updateTrendSelectionBand(selection, clientX){
+  const g = selection.geometry;
+  const currentX = clamp(clientX - g.boxRect.left, g.left, g.right);
+  const left = Math.min(selection.startBoxX, currentX);
+  const right = Math.max(selection.startBoxX, currentX);
+
+  const band = ensureTrendSelectionEl();
+  band.style.left = `${left}px`;
+  band.style.top = `${g.top}px`;
+  band.style.width = `${Math.max(1, right-left)}px`;
+  band.style.height = `${Math.max(1, g.bottom-g.top)}px`;
+  band.classList.add("active");
+  ui.trendBox.classList.add("selecting");
+}
+
+function applyTrendSelection(selection, clientX){
+  const g = selection.geometry;
+  const endBoxX = clamp(clientX - g.boxRect.left, g.left, g.right);
+  const left = Math.min(selection.startBoxX, endBoxX);
+  const right = Math.max(selection.startBoxX, endBoxX);
+  const plotWidth = Math.max(1, g.right - g.left);
+
+  if(right-left < 8) return;
+
+  const leftRatio = clamp((left-g.left)/plotWidth, 0, 1);
+  const rightRatio = clamp((right-g.left)/plotWidth, 0, 1);
+  const selectedStart = selection.viewStart + leftRatio * (selection.viewEnd-selection.viewStart);
+  const selectedEnd = selection.viewStart + rightRatio * (selection.viewEnd-selection.viewStart);
+  const selectedHours = Math.max(0, (selectedEnd-selectedStart) / 3600000);
+  const newHours = clamp(selectedHours, TREND_MIN_VIEW_HOURS, trendHours);
+  const center = (selectedStart + selectedEnd) / 2;
+  const centerOffsetHours = (selection.dataNow - center) / 3600000;
+
+  trendViewHours = newHours;
+  trendEndOffsetHours = clamp(
+    centerOffsetHours - newHours/2,
+    0,
+    Math.max(0, trendHours-newHours)
+  );
+  renderTrend();
+}
+
+function beginTrendPan(event){
+  if(trendViewHours >= trendHours - 0.01) return false;
   trendPan = {
     pointerId:event.pointerId,
     pointerType:event.pointerType,
@@ -1124,9 +1206,63 @@ ui.trendBox.addEventListener("pointerdown",(event)=>{
     moved:false,
     captured:false,
   };
+  return true;
+}
+
+ui.trendBox.addEventListener("pointerdown",(event)=>{
+  if(!trendModel) return;
+  if(event.pointerType === "touch" && !event.isPrimary) return;
+
+  // Mouse: ordinary left drag = box zoom; Shift+drag = pan.
+  if(event.pointerType === "mouse"){
+    if(event.button !== 0) return;
+
+    if(event.shiftKey){
+      beginTrendPan(event);
+      return;
+    }
+
+    const geometry = trendPlotGeometry();
+    if(!geometry || !pointInsideTrendPlot(event, geometry)) return;
+
+    trendSelection = {
+      pointerId:event.pointerId,
+      startX:event.clientX,
+      startY:event.clientY,
+      startBoxX:clamp(event.clientX - geometry.boxRect.left, geometry.left, geometry.right),
+      geometry,
+      viewStart:trendModel.since,
+      viewEnd:trendModel.now,
+      dataNow:trendModel.dataNow,
+      moved:false,
+      captured:false,
+    };
+    return;
+  }
+
+  // Touch/pen: preserve the existing pan behavior.
+  beginTrendPan(event);
 });
 
 ui.trendBox.addEventListener("pointermove",(event)=>{
+  if(trendSelection && trendSelection.pointerId === event.pointerId){
+    const dx = event.clientX - trendSelection.startX;
+
+    if(!trendSelection.moved){
+      if(Math.abs(dx) < 6) return;
+      trendSelection.moved = true;
+      try{
+        ui.trendBox.setPointerCapture?.(event.pointerId);
+        trendSelection.captured = true;
+      }catch{}
+      hideTrendTooltip();
+    }
+
+    if(event.cancelable) event.preventDefault();
+    updateTrendSelectionBand(trendSelection, event.clientX);
+    return;
+  }
+
   if(!trendPan || trendPan.pointerId !== event.pointerId) return;
   if(event.pointerType === "touch" && !event.isPrimary) return;
 
@@ -1143,7 +1279,7 @@ ui.trendBox.addEventListener("pointermove",(event)=>{
       Math.abs(dy) >= 8 &&
       Math.abs(dy) >= Math.abs(dx);
 
-    if(verticalIntent){
+    if(verticalIntent && event.pointerType === "touch"){
       trendPan = null;
       return;
     }
@@ -1173,18 +1309,36 @@ ui.trendBox.addEventListener("pointermove",(event)=>{
   }
 });
 
-function finishTrendPan(event){
+function finishTrendGesture(event, cancelled=false){
+  if(trendSelection && trendSelection.pointerId === event.pointerId){
+    const selection = trendSelection;
+    trendSelection = null;
+
+    if(selection.captured){
+      try{ ui.trendBox.releasePointerCapture?.(event.pointerId); }catch{}
+    }
+
+    hideTrendSelectionBand();
+    if(!cancelled && selection.moved){
+      applyTrendSelection(selection, event.clientX);
+    }
+    hideTrendTooltip();
+    return;
+  }
+
   if(!trendPan || trendPan.pointerId !== event.pointerId) return;
   const moved = trendPan.moved;
   const captured = trendPan.captured;
   trendPan = null;
+
   if(captured){
     try{ ui.trendBox.releasePointerCapture?.(event.pointerId); }catch{}
   }
   if(moved) hideTrendTooltip();
 }
-ui.trendBox.addEventListener("pointerup",finishTrendPan);
-ui.trendBox.addEventListener("pointercancel",finishTrendPan);
+
+ui.trendBox.addEventListener("pointerup",(event)=>finishTrendGesture(event,false));
+ui.trendBox.addEventListener("pointercancel",(event)=>finishTrendGesture(event,true));
 
 window.addEventListener("resize",()=>{
   hideTrendTooltip();
