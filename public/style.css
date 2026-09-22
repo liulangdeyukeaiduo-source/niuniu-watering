@@ -130,7 +130,11 @@ button:disabled{opacity:.42;cursor:not-allowed}
 .zoom-reset{padding:0 9px;font-size:10.5px}
 .zoom-btn:disabled,.zoom-reset:disabled{opacity:.38;cursor:default}
 .legend{margin-top:9px;display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;font-size:10px;color:var(--muted)}
-.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend span{display:inline-flex;align-items:center;gap:5px;padding:4px 7px;border-radius:999px;cursor:pointer;user-select:none;transition:opacity .16s ease,background .16s ease,filter .16s ease}
+.legend span:hover{background:#f2f5f1}
+.legend span:focus-visible{outline:2px solid rgba(79,138,85,.34);outline-offset:2px}
+.legend span.off{opacity:.34;background:#f5f6f4;text-decoration:line-through;text-decoration-thickness:1px}
+.legend span.off i{filter:grayscale(1);opacity:.55}
 .legend-line{display:inline-block;width:17px;height:2px;border-radius:2px}
 .legend-line.soil{background:#4f8a55}
 .legend-line.humidity{background:#5d8fa3}
@@ -155,14 +159,9 @@ button:disabled{opacity:.42;cursor:not-allowed}
 .vpd-threshold{stroke:#aa96c2;stroke-width:1;stroke-dasharray:4 4;opacity:.85}
 .vpd-label{font-size:8px;fill:#8b779f;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
 .vpd-title{font-size:8.5px;fill:#705b8c;font-weight:700;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
-.watering-halo{pointer-events:none;opacity:.96;filter:drop-shadow(0 0 4px rgba(82,123,94,.10))}
-.watering-focus-line{pointer-events:none;stroke-width:.85;stroke-linecap:round;opacity:.58}
-.watering-focus-line.auto{stroke:rgba(72,126,80,.64)}
-.watering-focus-line.manual{stroke:rgba(78,125,137,.60)}
-.watering-dot{pointer-events:none;stroke:#fff;stroke-width:1.4}
-.watering-dot.auto{fill:#6eaa79}
-.watering-dot.manual{fill:#739eaa}
-.watering-dot-highlight{pointer-events:none;fill:rgba(255,255,255,.78)}
+.watering-band{pointer-events:none;stroke-width:.7;shape-rendering:geometricPrecision}
+.watering-band.auto{fill:rgba(103,166,114,.16);stroke:rgba(79,138,85,.28)}
+.watering-band.manual{fill:rgba(92,154,170,.14);stroke:rgba(79,132,146,.26)}
 .trend-hit{pointer-events:all;cursor:crosshair}
 .trend-select-band{position:absolute;display:none;z-index:6;pointer-events:none;background:rgba(79,138,85,.12);border:1px solid rgba(79,138,85,.58);box-shadow:inset 0 0 0 1px rgba(255,255,255,.55);border-radius:4px}
 .trend-select-band.active{display:block}
