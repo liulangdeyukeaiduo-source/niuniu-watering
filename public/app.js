@@ -1135,15 +1135,18 @@ function trendPlotGeometry(){
   const svgRect = ui.trendSvg.getBoundingClientRect();
   if(!boxRect.width || !svgRect.width || !svgRect.height) return null;
 
-  const scaleX = svgRect.width / model.W;
-  const scaleY = svgRect.height / model.H;
+  // SVG uses the default xMidYMid meet behavior, so the rendered viewBox may
+  // have letterboxing when CSS min-height changes the aspect ratio.
+  const scale = Math.min(svgRect.width / model.W, svgRect.height / model.H);
+  const offsetX = (svgRect.width - model.W * scale) / 2;
+  const offsetY = (svgRect.height - model.H * scale) / 2;
 
   return {
     boxRect,
-    left: svgRect.left - boxRect.left + model.m.l * scaleX,
-    right: svgRect.left - boxRect.left + (model.W - model.m.r) * scaleX,
-    top: svgRect.top - boxRect.top + model.m.t * scaleY,
-    bottom: svgRect.top - boxRect.top + model.vpdBottom * scaleY,
+    left: svgRect.left - boxRect.left + offsetX + model.m.l * scale,
+    right: svgRect.left - boxRect.left + offsetX + (model.W - model.m.r) * scale,
+    top: svgRect.top - boxRect.top + offsetY + model.m.t * scale,
+    bottom: svgRect.top - boxRect.top + offsetY + model.vpdBottom * scale,
   };
 }
 
